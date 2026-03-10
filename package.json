@@ -1,0 +1,37 @@
+{
+  "name": "qsl-manager-web",
+  "version": "2.0.0",
+  "description": "QSL Card Manager - Web Application (Migrated from Python)",
+  "type": "module",
+  "scripts": {
+    "dev": "concurrently \"npm run server\" \"npm run client\"",
+    "server": "node server.js",
+    "client": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "migrate": "node server/db/migrations.js"
+  },
+  "keywords": ["qsl", "ham-radio", "amateur-radio", "card-manager"],
+  "author": "BH2VSQ",
+  "license": "MIT",
+  "dependencies": {
+    "express": "^4.18.2",
+    "sql.js": "^1.10.3",
+    "cors": "^2.8.5",
+    "multer": "^1.4.5-lts.1",
+    "qrcode": "^1.5.3",
+    "jspdf": "^2.5.1",
+    "dayjs": "^1.11.10",
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0",
+    "react-router-dom": "^6.21.1",
+    "antd": "^5.12.5",
+    "axios": "^1.6.5",
+    "zustand": "^4.4.7"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-react": "^4.2.1",
+    "vite": "^5.0.10",
+    "concurrently": "^8.2.2"
+  }
+}
