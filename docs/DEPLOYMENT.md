@@ -32,18 +32,12 @@ cd QSL-Manager
 ```bash
 # 使用 npm
 npm install
-
-# 或使用 yarn
-yarn install
 ```
 
 #### 3. 启动应用
 ```bash
 # 开发模式启动
 npm run dev
-
-# 或
-yarn dev
 ```
 
 #### 4. 访问应用
