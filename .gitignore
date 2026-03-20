@@ -12,6 +12,7 @@ build/
 database/*.db
 database/*.db-shm
 database/*.db-wal
+database/*.html
 
 # Temporary files
 temp/*.pdf

@@ -8,6 +8,109 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import { parseADIF, generateADIF } from '../utils/adifParser.js';
 
+/**
+ * 判断是否需要合并日志信息
+ * @param {Object} existingLog - 现有日志
+ * @param {Object} newRecord - 新记录
+ * @returns {boolean} - 是否需要合并
+ */
+function shouldMergeLog(existingLog, newRecord) {
+  // 检查新记录是否有现有日志缺少的重要信息
+  const fieldsToCheck = [
+    'rst_sent', 'rst_rcvd', 'comment', 'notes', 'tx_pwr',
+    'time_off', 'freq_rx', 'band_rx', 'submode',
+    'sat_name', 'sat_mode', 'prop_mode',
+    'gridsquare', 'my_gridsquare',
+    'repeater_callsign', 'repeater_location',
+    'uplink_freq', 'downlink_freq',
+    'qsl_sent_date', 'qsl_rcvd_date'
+  ];
+  
+  for (const field of fieldsToCheck) {
+    const existingValue = existingLog[field];
+    const newValue = newRecord[field];
+    
+    // 如果现有记录该字段为空或默认值，而新记录有值，则需要合并
+    if ((!existingValue || existingValue === '' || existingValue === 'N') && 
+        newValue && newValue !== '' && newValue !== 'N') {
+      return true;
+    }
+  }
+  
+  return false;
+}
+
+/**
+ * 合并日志数据
+ * @param {Object} existingLog - 现有日志
+ * @param {Object} newRecord - 新记录
+ * @returns {Object} - 合并后的数据
+ */
+function mergeLogData(existingLog, newRecord) {
+  const merged = { ...existingLog };
+  
+  // 合并字段：优先使用有值的数据
+  const fieldsToMerge = [
+    'time_off', 'band_rx', 'freq_rx', 'submode',
+    'rst_sent', 'rst_rcvd', 'tx_pwr',
+    'sat_name', 'sat_mode', 'prop_mode',
+    'my_gridsquare', 'gridsquare',
+    'repeater_callsign', 'repeater_location',
+    'uplink_freq', 'downlink_freq'
+  ];
+  
+  for (const field of fieldsToMerge) {
+    const existingValue = existingLog[field];
+    const newValue = newRecord[field];
+    
+    // 如果现有值为空或null，使用新值
+    if ((!existingValue || existingValue === '') && newValue) {
+      merged[field] = newValue;
+    }
+  }
+  
+  // 特殊处理comment和notes字段：合并而不是替换
+  if (newRecord.comment && newRecord.comment.trim()) {
+    if (!existingLog.comment || existingLog.comment.trim() === '') {
+      merged.comment = newRecord.comment;
+    } else if (existingLog.comment.indexOf(newRecord.comment) === -1) {
+      // 如果新备注不在现有备注中，则追加
+      merged.comment = existingLog.comment + ' | ' + newRecord.comment;
+    }
+  }
+  
+  if (newRecord.notes && newRecord.notes.trim()) {
+    if (!existingLog.notes || existingLog.notes.trim() === '') {
+      merged.notes = newRecord.notes;
+    } else if (existingLog.notes.indexOf(newRecord.notes) === -1) {
+      // 如果新笔记不在现有笔记中，则追加
+      merged.notes = existingLog.notes + ' | ' + newRecord.notes;
+    }
+  }
+  
+  // QSL状态合并：如果新记录有更新的状态，使用新状态
+  if (newRecord.qsl_sent && newRecord.qsl_sent !== 'N' && 
+      (!existingLog.qsl_sent || existingLog.qsl_sent === 'N')) {
+    merged.qsl_sent = newRecord.qsl_sent;
+  }
+  
+  if (newRecord.qsl_rcvd && newRecord.qsl_rcvd !== 'N' && 
+      (!existingLog.qsl_rcvd || existingLog.qsl_rcvd === 'N')) {
+    merged.qsl_rcvd = newRecord.qsl_rcvd;
+  }
+  
+  // QSL日期合并
+  if (newRecord.qsl_sent_date && !existingLog.qsl_sent_date) {
+    merged.qsl_sent_date = newRecord.qsl_sent_date;
+  }
+  
+  if (newRecord.qsl_rcvd_date && !existingLog.qsl_rcvd_date) {
+    merged.qsl_rcvd_date = newRecord.qsl_rcvd_date;
+  }
+  
+  return merged;
+}
+
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 // 配置文件上传
@@ -574,48 +677,128 @@ router.post('/import', upload.single('file'), async (req, res) => {
 
     let importedCount = 0;
     let duplicateCount = 0;
+    let mergedCount = 0;
     let errorCount = 0;
 
     for (const record of records) {
       try {
-        // 检查重复（5分钟窗口）
-        const isDuplicate = db.prepare(`
-          SELECT id FROM logs 
+        // 检查是否存在相同的日志（5分钟窗口）
+        const existingLog = db.prepare(`
+          SELECT * FROM logs 
           WHERE station_callsign = ? 
           AND qso_date = ? 
           AND ABS(CAST(time_on AS INTEGER) - CAST(? AS INTEGER)) <= 5
         `).get(record.call, record.qso_date, record.time_on);
         
-        if (isDuplicate) {
-          duplicateCount++;
+        if (existingLog) {
+          // 检查是否需要合并信息
+          const needsMerge = shouldMergeLog(existingLog, record);
+          
+          if (needsMerge) {
+            // 合并日志信息
+            const mergedData = mergeLogData(existingLog, record);
+            
+            // 更新现有日志
+            const updateResult = db.prepare(`
+              UPDATE logs SET
+                time_off = ?,
+                band_rx = ?,
+                freq_rx = ?,
+                submode = ?,
+                rst_sent = ?,
+                rst_rcvd = ?,
+                tx_pwr = ?,
+                comment = ?,
+                notes = ?,
+                qsl_sent = ?,
+                qsl_rcvd = ?,
+                qsl_sent_date = ?,
+                qsl_rcvd_date = ?,
+                sat_name = ?,
+                sat_mode = ?,
+                prop_mode = ?,
+                my_gridsquare = ?,
+                gridsquare = ?,
+                repeater_callsign = ?,
+                repeater_location = ?,
+                uplink_freq = ?,
+                downlink_freq = ?,
+                updated_at = CURRENT_TIMESTAMP
+              WHERE id = ?
+            `).run(
+              mergedData.time_off,
+              mergedData.band_rx,
+              mergedData.freq_rx,
+              mergedData.submode,
+              mergedData.rst_sent,
+              mergedData.rst_rcvd,
+              mergedData.tx_pwr,
+              mergedData.comment,
+              mergedData.notes,
+              mergedData.qsl_sent,
+              mergedData.qsl_rcvd,
+              mergedData.qsl_sent_date,
+              mergedData.qsl_rcvd_date,
+              mergedData.sat_name,
+              mergedData.sat_mode,
+              mergedData.prop_mode,
+              mergedData.my_gridsquare,
+              mergedData.gridsquare,
+              mergedData.repeater_callsign,
+              mergedData.repeater_location,
+              mergedData.uplink_freq,
+              mergedData.downlink_freq,
+              existingLog.id
+            );
+            
+            if (updateResult.changes > 0) {
+              mergedCount++;
+            }
+          } else {
+            duplicateCount++;
+          }
           continue;
         }
 
-        // 插入日志
+        // 插入新日志
         const result = db.prepare(`
           INSERT INTO logs (
-            station_callsign, qso_date, time_on, freq, band, mode,
-            rst_sent, rst_rcvd, my_callsign, tx_pwr, notes,
-            sat_name, sat_mode, my_gridsquare,
-            qsl_sent, qsl_rcvd
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            station_callsign, qso_date, time_on, time_off, freq, freq_rx, band, band_rx, mode, submode,
+            rst_sent, rst_rcvd, my_callsign, tx_pwr, comment, notes,
+            sat_name, sat_mode, prop_mode, my_gridsquare, gridsquare,
+            repeater_callsign, repeater_location, uplink_freq, downlink_freq,
+            qsl_sent, qsl_rcvd, qsl_sent_date, qsl_rcvd_date
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `).run(
           record.call || '',
           record.qso_date || '',
           record.time_on || '',
+          record.time_off || null,
           record.freq || null,
+          record.freq_rx || null,
           record.band || '',
+          record.band_rx || null,
           record.mode || '',
+          record.submode || null,
           record.rst_sent || '',
           record.rst_rcvd || '',
           record.station_callsign || '',
           record.tx_pwr || null,
           record.comment || '',
+          record.notes || '',
           record.sat_name || null,
           record.sat_mode || null,
+          record.prop_mode || null,
           record.my_gridsquare || null,
-          'N',
-          'N'
+          record.gridsquare || null,
+          record.repeater_callsign || null,
+          record.repeater_location || null,
+          record.uplink_freq || null,
+          record.downlink_freq || null,
+          record.qsl_sent || 'N',
+          record.qsl_rcvd || 'N',
+          record.qsl_sent_date || null,
+          record.qsl_rcvd_date || null
         );
 
         if (result.changes > 0) {
@@ -644,11 +827,12 @@ router.post('/import', upload.single('file'), async (req, res) => {
       success: true,
       data: {
         imported_count: importedCount,
+        merged_count: mergedCount,
         duplicate_count: duplicateCount,
         error_count: errorCount,
         total_count: records.length
       },
-      message: `成功导入 ${importedCount} 条记录，跳过 ${duplicateCount} 条重复记录${errorCount > 0 ? `，${errorCount} 条记录导入失败` : ''}`
+      message: `成功导入 ${importedCount} 条新记录，合并 ${mergedCount} 条记录，跳过 ${duplicateCount} 条重复记录${errorCount > 0 ? `，${errorCount} 条记录处理失败` : ''}`
     });
   } catch (error) {
     console.error('Import ADIF error:', error);

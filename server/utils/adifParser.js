@@ -58,14 +58,26 @@ function parseRecord(recordStr) {
       case 'time_on':
         record.time_on = fieldValue;
         break;
+      case 'time_off':
+        record.time_off = fieldValue;
+        break;
       case 'freq':
         record.freq = parseFloat(fieldValue);
+        break;
+      case 'freq_rx':
+        record.freq_rx = parseFloat(fieldValue);
+        break;
+      case 'band_rx':
+        record.band_rx = fieldValue;
         break;
       case 'band':
         record.band = fieldValue;
         break;
       case 'mode':
         record.mode = fieldValue.toUpperCase();
+        break;
+      case 'submode':
+        record.submode = fieldValue;
         break;
       case 'rst_sent':
         record.rst_sent = fieldValue;
@@ -78,8 +90,10 @@ function parseRecord(recordStr) {
         record.station_callsign = fieldValue.toUpperCase();
         break;
       case 'comment':
-      case 'notes':
         record.comment = fieldValue;
+        break;
+      case 'notes':
+        record.notes = fieldValue;
         break;
       case 'tx_pwr':
         record.tx_pwr = parseFloat(fieldValue);
@@ -90,11 +104,41 @@ function parseRecord(recordStr) {
       case 'sat_mode':
         record.sat_mode = fieldValue;
         break;
-      case 'my_gridsquare':
       case 'gridsquare':
+        record.gridsquare = fieldValue;
+        break;
+      case 'my_gridsquare':
         record.my_gridsquare = fieldValue;
         break;
-      // 可以添加更多字段映射
+      case 'prop_mode':
+        record.prop_mode = fieldValue;
+        break;
+      case 'repeater_callsign':
+        record.repeater_callsign = fieldValue;
+        break;
+      case 'repeater_location':
+        record.repeater_location = fieldValue;
+        break;
+      case 'uplink_freq':
+        record.uplink_freq = parseFloat(fieldValue);
+        break;
+      case 'downlink_freq':
+        record.downlink_freq = parseFloat(fieldValue);
+        break;
+      case 'qsl_sent':
+        record.qsl_sent = fieldValue.toUpperCase();
+        break;
+      case 'qsl_rcvd':
+        record.qsl_rcvd = fieldValue.toUpperCase();
+        break;
+      case 'qsl_sent_date':
+      case 'qslsdate':
+        record.qsl_sent_date = fieldValue;
+        break;
+      case 'qsl_rcvd_date':
+      case 'qslrdate':
+        record.qsl_rcvd_date = fieldValue;
+        break;
     }
   }
   
@@ -154,7 +198,22 @@ function generateRecord(log) {
     record += formatField('TIME_ON', timeStr);
   }
   
-  // 可选字段
+  if (log.time_off) {
+    const timeStr = log.time_off.toString().padStart(4, '0');
+    record += formatField('TIME_OFF', timeStr);
+  }
+  
+  if (log.freq_rx) {
+    record += formatField('FREQ_RX', log.freq_rx.toString());
+  }
+  
+  if (log.band_rx) {
+    record += formatField('BAND_RX', log.band_rx);
+  }
+  
+  if (log.submode) {
+    record += formatField('SUBMODE', log.submode);
+  }
   if (log.freq) {
     record += formatField('FREQ', log.freq.toString());
   }
@@ -183,8 +242,36 @@ function generateRecord(log) {
     record += formatField('TX_PWR', log.tx_pwr.toString());
   }
   
+  if (log.comment) {
+    record += formatField('COMMENT', log.comment);
+  }
+  
   if (log.notes) {
-    record += formatField('COMMENT', log.notes);
+    record += formatField('NOTES', log.notes);
+  }
+  
+  if (log.gridsquare) {
+    record += formatField('GRIDSQUARE', log.gridsquare);
+  }
+  
+  if (log.prop_mode) {
+    record += formatField('PROP_MODE', log.prop_mode);
+  }
+  
+  if (log.repeater_callsign) {
+    record += formatField('REPEATER_CALLSIGN', log.repeater_callsign);
+  }
+  
+  if (log.repeater_location) {
+    record += formatField('REPEATER_LOCATION', log.repeater_location);
+  }
+  
+  if (log.uplink_freq) {
+    record += formatField('UPLINK_FREQ', log.uplink_freq.toString());
+  }
+  
+  if (log.downlink_freq) {
+    record += formatField('DOWNLINK_FREQ', log.downlink_freq.toString());
   }
   
   // 卫星字段

@@ -182,7 +182,22 @@ const LogManagement = () => {
         setLoading(true);
         const response = await logsApi.importAdif(file);
         if (response.success) {
-          message.success(`导入成功：${response.data.imported_count} 条记录`);
+          const { imported_count, merged_count, duplicate_count, error_count } = response.data;
+          let successMsg = `导入成功：${imported_count} 条新记录`;
+          
+          if (merged_count > 0) {
+            successMsg += `，合并 ${merged_count} 条记录`;
+          }
+          
+          if (duplicate_count > 0) {
+            successMsg += `，跳过 ${duplicate_count} 条重复记录`;
+          }
+          
+          if (error_count > 0) {
+            successMsg += `，${error_count} 条记录处理失败`;
+          }
+          
+          message.success(successMsg);
           fetchLogs();
         }
       } catch (error) {

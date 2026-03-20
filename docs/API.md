@@ -184,11 +184,39 @@ DELETE /api/logs/:id
 #### ADIF 导入
 
 ```http
-POST /api/logs/import/adif
+POST /api/logs/import
 Content-Type: multipart/form-data
 
 file: [ADIF文件]
 ```
+
+**功能特性**:
+
+- 支持完整的ADIF 3.1.0字段导入
+- 智能重复检测和数据合并
+- 自动处理信号报告、备注等缺失信息
+
+**响应**:
+
+```json
+{
+  "success": true,
+  "data": {
+    "imported_count": 10,    // 新导入记录数
+    "merged_count": 3,       // 合并记录数
+    "duplicate_count": 2,    // 重复跳过记录数
+    "error_count": 0,        // 错误记录数
+    "total_count": 15        // 总处理记录数
+  },
+  "message": "成功导入 10 条新记录，合并 3 条记录，跳过 2 条重复记录"
+}
+```
+
+**智能合并规则**:
+
+- 相同呼号、日期、时间(±5分钟)的记录会被检测为重复
+- 如果新记录包含现有记录缺失的信息(如信号报告、备注)，会自动合并
+- 备注和笔记字段采用追加模式，用" | "分隔符连接
 
 #### ADIF 导出
 
