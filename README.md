@@ -7,7 +7,7 @@ QSL Manager 是一个现代化的业余无线电 QSL 卡片管理系统，从 Py
 ### 系统要求
 
 - Node.js 18+ 
-- npm 或 yarn
+- npm
 - 现代浏览器（Chrome、Firefox、Safari、Edge）
 
 ### 一键启动
@@ -22,6 +22,9 @@ npm install
 
 # 3. 启动应用（零配置）
 npm run dev
+
+# 或使用 PM2 部署（生产环境推荐）
+npm run pm2:start
 ```
 
 ### 访问地址
@@ -119,6 +122,53 @@ npm install
 npm run dev
 ```
 
+## � PM2 部署
+
+### 使用 PM2 管理应用（生产环境推荐）
+
+```bash
+# 启动应用
+npm run pm2:start
+
+# 查看状态
+npm run pm2:status
+
+# 查看日志
+npm run pm2:logs
+
+# 重启应用
+npm run pm2:restart
+
+# 停止应用
+npm run pm2:stop
+
+# 删除应用
+npm run pm2:delete
+```
+
+### PM2 特性
+
+- **双进程管理**: 同时管理前端（Vite）和后端（Express）服务
+- **自动重启**: 应用崩溃时自动重启
+- **日志管理**: 自动记录应用日志到 `./logs/` 目录
+- **内存监控**: 内存超过 500MB 自动重启
+- **进程守护**: 后台运行，系统重启后自动恢复
+
+PM2 会启动两个进程：
+
+- `qsl-backend`: 后端 API 服务器 (端口 7055)
+- `qsl-frontend`: 前端开发服务器 (端口 7054)
+
+### 开机自启动
+
+```bash
+# 保存当前 PM2 进程列表
+pm2 save
+
+# 生成开机启动脚本
+pm2 startup
+```
+
 ## 🔧 开发指南
 
 ### 项目结构
@@ -135,7 +185,18 @@ QSL-Manager/
 ### 开发命令
 
 ```bash
-npm run dev      # 启动开发服务器
+npm run dev          # 启动开发服务器（前端+后端）
+npm run server       # 仅启动后端服务器
+npm run client       # 仅启动前端开发服务器
+npm run build        # 构建生产版本
+npm run migrate      # 运行数据库迁移
+
+# PM2 生产环境命令
+npm run pm2:start    # 使用 PM2 启动应用
+npm run pm2:stop     # 停止 PM2 应用
+npm run pm2:restart  # 重启 PM2 应用
+npm run pm2:logs     # 查看 PM2 日志
+npm run pm2:status   # 查看 PM2 状态
 ```
 
 ## 🤝 贡献指南
