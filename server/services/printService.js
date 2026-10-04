@@ -82,19 +82,20 @@ export const generateAddressPrintHTML = (data) => {
       }
     }
 
-    if (currentLine && lines.length < 3) {
-      lines.push(currentLine);
-    }
-    
-    // 如果还有剩余内容但已达到行数限制，将其合并到最后一行
-    if (currentLine && lines.length === 3) {
-      lines[2] = lines[2] + currentLine;
-      // 截断过长的最后一行
-      if (lines[2].length > 25) {
-        lines[2] = lines[2].substring(0, 25) + '...';
+    if (currentLine) {
+      if (lines.length < 3) {
+        lines.push(currentLine);
+      } else {
+        // 已达到行数限制，将剩余内容合并到最后一行
+        lines[2] += currentLine;
+        // 截断过长的最后一行
+        if (lines[2].length > 25) {
+          lines[2] = lines[2].substring(0, 25) + '...';
+        }
       }
+      currentLine = '';
     }
-    
+
     return lines.filter(line => line);
   };
 
@@ -219,17 +220,18 @@ export const generateAddressBatchPrintHTML = (addressDataArray) => {
       }
     }
 
-    if (currentLine && lines.length < 3) {
-      lines.push(currentLine);
-    }
-    
-    if (currentLine && lines.length === 3) {
-      lines[2] = lines[2] + currentLine;
-      if (lines[2].length > 25) {
-        lines[2] = lines[2].substring(0, 25) + '...';
+    if (currentLine) {
+      if (lines.length < 3) {
+        lines.push(currentLine);
+      } else {
+        lines[2] += currentLine;
+        if (lines[2].length > 25) {
+          lines[2] = lines[2].substring(0, 25) + '...';
+        }
       }
+      currentLine = '';
     }
-    
+
     return lines.filter(line => line);
   };
 
