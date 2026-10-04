@@ -291,6 +291,9 @@ const Settings = () => {
             setTimeout(() => {
               window.location.reload();
             }, 4000);
+          } else {
+            // 后端返回 success:false（如 git pull 失败）时也要提示原因
+            message.error(response.error || '更新失败，请查看服务器日志');
           }
         } catch (error) {
           message.error('更新失败: ' + (error.response?.data?.error || error.message));

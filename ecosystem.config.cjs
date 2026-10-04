@@ -2,12 +2,12 @@ module.exports = {
   apps: [
     {
       name: 'qsl-manager',
-      script: './start.js',
+      script: './server.js',
       instances: 1,
       exec_mode: 'fork',
       watch: false,
       env: {
-        NODE_ENV: 'development',
+        NODE_ENV: 'production',
         PORT: 7055
       },
       error_file: './logs/error.log',

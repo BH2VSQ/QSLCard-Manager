@@ -1,5 +1,5 @@
 import express from 'express';
-import { exec } from 'child_process';
+import { exec, spawn } from 'child_process';
 import { promisify } from 'util';
 import fs from 'fs';
 import path from 'path';
@@ -82,6 +82,26 @@ function compareVersions(a, b) {
     if (x < y) return -1;
   }
   return 0;
+}
+
+/**
+ * 执行 git pull（仅快进）。返回输出文本；失败抛出带明确信息的 Error。
+ */
+async function runGitPull() {
+  if (!fs.existsSync(path.join(PROJECT_ROOT, '.git'))) {
+    throw new Error('当前目录不是 Git 仓库（缺少 .git 目录），无法通过 git pull 更新');
+  }
+  try {
+    await execAsync('git --version', { timeout: 10000, windowsHide: true });
+  } catch {
+    throw new Error('运行环境未安装 git，无法执行更新');
+  }
+  const { stdout, stderr } = await execAsync('git pull --ff-only', {
+    cwd: PROJECT_ROOT,
+    timeout: 120000,
+    windowsHide: true,
+  });
+  return (stdout + stderr).trim();
 }
 
 /**
@@ -183,18 +203,13 @@ router.post('/apply', async (req, res) => {
     // 1. git pull（仅快进，避免产生合并冲突）
     let gitOutput = '';
     try {
-      const { stdout, stderr } = await execAsync('git pull --ff-only', {
-        cwd: PROJECT_ROOT,
-        timeout: 120000,
-        windowsHide: true,
-      });
-      gitOutput = (stdout + stderr).trim();
+      gitOutput = await runGitPull();
       steps.push({ step: 'git pull', ok: true, output: gitOutput });
     } catch (e) {
-      gitOutput = ((e.stdout || '') + (e.stderr || '') + e.message).trim();
+      gitOutput = e.message;
       return res.json({
         success: false,
-        error: 'git pull 失败，请确认本地仓库没有未提交改动、与远程未分叉，或检查网络',
+        error: 'git pull 失败：' + e.message,
         output: gitOutput,
       });
     }
@@ -214,6 +229,23 @@ router.post('/apply', async (req, res) => {
       steps.push({ step: 'npm install', ok: false, output: npmOutput });
     }
 
+    // 3. 生产环境重新构建前端（dev 模式由 vite 热更新，无需构建）
+    if (process.env.NODE_ENV === 'production') {
+      let buildOutput = '';
+      try {
+        const { stdout, stderr } = await execAsync('npm run build', {
+          cwd: PROJECT_ROOT,
+          timeout: 300000,
+          windowsHide: true,
+        });
+        buildOutput = (stdout + stderr).trim();
+        steps.push({ step: 'npm run build', ok: true, output: buildOutput });
+      } catch (e) {
+        buildOutput = ((e.stdout || '') + (e.stderr || '') + e.message).trim();
+        steps.push({ step: 'npm run build', ok: false, output: buildOutput });
+      }
+    }
+
     res.json({
       success: true,
       message: '更新完成，服务即将重启...',
@@ -229,18 +261,62 @@ router.post('/apply', async (req, res) => {
 });
 
 /**
- * 重启服务（PM2 环境下重启整个应用，否则退出让父进程处理）
+ * 重启服务：PM2 环境下用 pm2 重启整个应用；否则重新拉起当前入口进程。
  */
 function scheduleRestart() {
   setTimeout(() => {
     if (process.env.pm_id !== undefined) {
-      exec('pm2 restart qsl-manager', { windowsHide: true }, (err) => {
+      // PM2 管理：优先用本地 pm2 二进制重启，失败则退出交给 PM2 autorestart
+      const name = process.env.name || 'qsl-manager';
+      const pm2Bin = path.join(
+        PROJECT_ROOT,
+        'node_modules',
+        '.bin',
+        process.platform === 'win32' ? 'pm2.cmd' : 'pm2'
+      );
+      const pm2Cmd = fs.existsSync(pm2Bin) ? pm2Bin : 'pm2';
+      exec(`${JSON.stringify(pm2Cmd)} restart ${name}`, { windowsHide: true }, (err) => {
         if (err) process.exit(0);
       });
-    } else {
-      process.exit(0);
+      return;
     }
+    // 非 PM2（裸 node / npm run dev 等）：延迟重新拉起当前入口后退出
+    respawnSelf();
   }, 1500);
+}
+
+/**
+ * 非 PM2 环境下重新拉起当前入口进程。
+ * 用一个独立的 node 进程在 2 秒后启动入口，规避旧进程尚未释放端口造成的 EADDRINUSE。
+ */
+function respawnSelf() {
+  const entry = process.argv[1];
+  if (!entry) {
+    process.exit(0);
+    return;
+  }
+  const args = [entry, ...process.argv.slice(2)];
+  const launcher = [
+    'const { spawn } = require("child_process");',
+    'setTimeout(() => {',
+    `  const child = spawn(process.execPath, ${JSON.stringify(args)}, {`,
+    `    cwd: ${JSON.stringify(PROJECT_ROOT)},`,
+    '    stdio: "inherit",',
+    '    detached: true,',
+    '    windowsHide: true,',
+    '  });',
+    '  child.unref();',
+    '}, 2000);',
+  ].join('\n');
+
+  const child = spawn(process.execPath, ['-e', launcher], {
+    cwd: PROJECT_ROOT,
+    detached: true,
+    stdio: 'ignore',
+    windowsHide: true,
+  });
+  child.unref();
+  process.exit(0);
 }
 
 export default router;
