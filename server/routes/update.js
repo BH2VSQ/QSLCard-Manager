@@ -1,11 +1,12 @@
 import express from 'express';
-import { exec, spawn } from 'child_process';
+import { exec, execFile } from 'child_process';
 import { promisify } from 'util';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 
 const execAsync = promisify(exec);
+const execFileAsync = promisify(execFile);
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PROJECT_ROOT = path.join(__dirname, '../..');
 
@@ -92,15 +93,35 @@ async function runGitPull() {
     throw new Error('当前目录不是 Git 仓库（缺少 .git 目录），无法通过 git pull 更新');
   }
   try {
-    await execAsync('git --version', { timeout: 10000, windowsHide: true });
+    await execFileAsync('git', ['--version'], { timeout: 10000, windowsHide: true });
   } catch {
     throw new Error('运行环境未安装 git，无法执行更新');
   }
-  const { stdout, stderr } = await execAsync('git pull --ff-only', {
-    cwd: PROJECT_ROOT,
-    timeout: 120000,
-    windowsHide: true,
-  });
+
+  // 更新源以 config.json 里的 update_repo 为准，而不是本地 git 的默认远程。
+  // 否则当本地 origin 指向备份库时，git pull 会拉到备份库的内容。
+  const repoUrl = getRepoUrl();
+
+  // 当前分支（游离 HEAD 时回退到 main）
+  let branch = 'main';
+  try {
+    const { stdout } = await execFileAsync('git', ['rev-parse', '--abbrev-ref', 'HEAD'], {
+      cwd: PROJECT_ROOT,
+      timeout: 10000,
+      windowsHide: true,
+    });
+    const b = stdout.trim();
+    if (b && b !== 'HEAD') branch = b;
+  } catch {
+    // 忽略，使用默认 main
+  }
+
+  // 用 execFile（不走 shell）+ 参数数组，避免 repoUrl 被注入 shell 命令
+  const { stdout, stderr } = await execFileAsync(
+    'git',
+    ['pull', '--ff-only', repoUrl, branch],
+    { cwd: PROJECT_ROOT, timeout: 120000, windowsHide: true }
+  );
   return (stdout + stderr).trim();
 }
 
@@ -261,7 +282,8 @@ router.post('/apply', async (req, res) => {
 });
 
 /**
- * 重启服务：PM2 环境下用 pm2 重启整个应用；否则重新拉起当前入口进程。
+ * 重启服务：PM2 环境下用 pm2 重启整个应用；否则退出进程，交给上层守护
+ * （1Panel / systemd / Docker restart 策略 / PM2 autorestart）重新拉起。
  */
 function scheduleRestart() {
   setTimeout(() => {
@@ -280,43 +302,8 @@ function scheduleRestart() {
       });
       return;
     }
-    // 非 PM2（裸 node / npm run dev 等）：延迟重新拉起当前入口后退出
-    respawnSelf();
-  }, 1500);
-}
-
-/**
- * 非 PM2 环境下重新拉起当前入口进程。
- * 用一个独立的 node 进程在 2 秒后启动入口，规避旧进程尚未释放端口造成的 EADDRINUSE。
- */
-function respawnSelf() {
-  const entry = process.argv[1];
-  if (!entry) {
     process.exit(0);
-    return;
-  }
-  const args = [entry, ...process.argv.slice(2)];
-  const launcher = [
-    'const { spawn } = require("child_process");',
-    'setTimeout(() => {',
-    `  const child = spawn(process.execPath, ${JSON.stringify(args)}, {`,
-    `    cwd: ${JSON.stringify(PROJECT_ROOT)},`,
-    '    stdio: "inherit",',
-    '    detached: true,',
-    '    windowsHide: true,',
-    '  });',
-    '  child.unref();',
-    '}, 2000);',
-  ].join('\n');
-
-  const child = spawn(process.execPath, ['-e', launcher], {
-    cwd: PROJECT_ROOT,
-    detached: true,
-    stdio: 'ignore',
-    windowsHide: true,
-  });
-  child.unref();
-  process.exit(0);
+  }, 1500);
 }
 
 export default router;
