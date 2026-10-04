@@ -1,6 +1,6 @@
 {
   "name": "qsl-manager-web",
-  "version": "2.0.1",
+  "version": "2.0.2",
   "description": "QSL Card Manager - Web Application (Migrated from Python)",
   "type": "module",
   "scripts": {
