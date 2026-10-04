@@ -317,7 +317,7 @@ async function generateLayout1(doc, qslId, logs) {
         const day = formattedDate.slice(6, 8);
         const month = formattedDate.slice(4, 6);
         const year = formattedDate.slice(0, 4);
-        formattedDate = `${day}.${month}.${year}`;
+        formattedDate = `${year}.${month}.${day}`;
       }
 
       // 基础数据
