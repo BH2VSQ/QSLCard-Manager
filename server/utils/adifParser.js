@@ -2,6 +2,7 @@
  * ADIF 解析器
  * 支持基本的 ADIF 格式解析和生成
  */
+import { normalizeGrid } from './grid.js';
 
 /**
  * 解析 ADIF 文件
@@ -108,7 +109,8 @@ function parseRecord(recordStr) {
         record.gridsquare = fieldValue;
         break;
       case 'my_gridsquare':
-        record.my_gridsquare = fieldValue;
+        // 六位网格自动合并为四位（如 PM01aa -> PM01）
+        record.my_gridsquare = normalizeGrid(fieldValue);
         break;
       case 'prop_mode':
         record.prop_mode = fieldValue;

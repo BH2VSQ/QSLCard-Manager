@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import {
   Card,
   Input,
@@ -10,8 +10,15 @@ import {
   Descriptions,
   Tag,
   Divider,
+  Modal,
 } from 'antd';
-import { ScanOutlined, CheckCircleOutlined, CloseCircleOutlined } from '@ant-design/icons';
+import {
+  ScanOutlined,
+  CheckCircleOutlined,
+  CloseCircleOutlined,
+  CameraOutlined,
+} from '@ant-design/icons';
+import { Html5Qrcode } from 'html5-qrcode';
 import { qslApi } from '../api';
 import { STATUS_TEXT, DIRECTION_TEXT } from '../utils/constants';
 import { formatQslId } from '../utils/formatters';
@@ -23,17 +30,21 @@ const Inventory = () => {
   const [loading, setLoading] = useState(false);
   const [scanResult, setScanResult] = useState(null);
   const [continuousMode, setContinuousMode] = useState(true);
+  const [cameraOpen, setCameraOpen] = useState(false);
+  const [cameraError, setCameraError] = useState('');
+  const html5QrCodeRef = useRef(null);
 
-  const handleScan = async () => {
-    if (!qslId || !qslId.trim()) {
+  const performScan = async (inputId) => {
+    const id = (inputId !== undefined ? inputId : qslId).trim();
+    if (!id) {
       message.warning('请输入 QSL ID');
       return;
     }
 
     try {
       setLoading(true);
-      const response = await qslApi.scan(qslId.trim());
-      
+      const response = await qslApi.scan(id);
+
       if (response.success) {
         setScanResult({
           success: true,
@@ -57,42 +68,80 @@ const Inventory = () => {
     }
   };
 
+  const handleScan = () => performScan();
+
   const handleKeyPress = (e) => {
     if (e.key === 'Enter') {
-      handleScan();
+      performScan();
     }
+  };
+
+  const startCamera = async () => {
+    setCameraOpen(true);
+    setCameraError('');
+
+    // 摄像头需要安全上下文（HTTPS 或 localhost），HTTP 访问会被浏览器拦截
+    if (!window.isSecureContext) {
+      setCameraError('摄像头调用需要 HTTPS 环境。当前为 HTTP 访问，请改用 HTTPS 访问，或在 localhost 下调试。');
+      return;
+    }
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+      setCameraError('当前浏览器不支持摄像头调用（getUserMedia 不可用），请使用最新版 Chrome / Safari / Edge。');
+      return;
+    }
+
+    // 等待 Modal 内的容器渲染完成后再初始化摄像头
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    try {
+      const reader = new Html5Qrcode('qr-reader');
+      html5QrCodeRef.current = reader;
+      await reader.start(
+        { facingMode: 'environment' },
+        { fps: 10, qrbox: { width: 250, height: 250 } },
+        (decodedText) => {
+          const id = (decodedText || '').trim();
+          if (id) {
+            stopCamera();
+            performScan(id);
+          }
+        },
+        () => {
+          // 逐帧解码失败，忽略
+        }
+      );
+    } catch (err) {
+      setCameraError('无法访问摄像头：' + (err && err.message ? err.message : err));
+    }
+  };
+
+  const stopCamera = async () => {
+    if (html5QrCodeRef.current) {
+      try {
+        await html5QrCodeRef.current.stop();
+        html5QrCodeRef.current.clear();
+      } catch (e) {
+        // 忽略停止时的错误
+      }
+      html5QrCodeRef.current = null;
+    }
+    setCameraOpen(false);
   };
 
   return (
     <div>
       <Card title={<Title level={3} style={{ margin: 0 }}>出入库管理</Title>}>
-        <Alert
-          message="扫码说明"
-          description={
-            <div>
-              <p>• 扫描 QSL ID 进行出入库操作</p>
-              <p>• TC（发卡）：pending → out_stock（已出库）</p>
-              <p>• RC（收卡）：pending → in_stock（已入库）</p>
-              <p>• 连续模式：扫码后自动清空输入框，可连续操作</p>
-            </div>
-          }
-          type="info"
-          showIcon
-          style={{ marginBottom: 24 }}
-        />
-
         {/* 扫码输入 */}
         <Space direction="vertical" size="large" style={{ width: '100%' }}>
           <div>
             <Text strong>QSL ID:</Text>
-            <Space style={{ marginTop: 8, width: '100%' }}>
+            <div style={{ marginTop: 8, display: 'flex', flexWrap: 'wrap', gap: 8 }}>
               <Input
                 size="large"
                 placeholder="扫描或输入 QSL ID"
                 value={qslId}
                 onChange={(e) => setQslId(e.target.value)}
                 onKeyPress={handleKeyPress}
-                style={{ width: 400 }}
+                style={{ flex: 1, minWidth: 220 }}
                 autoFocus
               />
               <Button
@@ -104,6 +153,9 @@ const Inventory = () => {
               >
                 扫码
               </Button>
+              <Button size="large" icon={<CameraOutlined />} onClick={startCamera}>
+                摄像头扫码
+              </Button>
               <Button
                 size="large"
                 onClick={() => {
@@ -113,7 +165,7 @@ const Inventory = () => {
               >
                 清空
               </Button>
-            </Space>
+            </div>
           </div>
 
           {/* 扫码结果 */}
@@ -166,6 +218,20 @@ const Inventory = () => {
           )}
         </Space>
       </Card>
+
+      {/* 摄像头扫码弹窗 */}
+      <Modal
+        title="摄像头扫码"
+        open={cameraOpen}
+        onCancel={stopCamera}
+        footer={null}
+        destroyOnClose
+      >
+        <div id="qr-reader" style={{ width: '100%' }} />
+        {cameraError && (
+          <Alert type="error" message={cameraError} style={{ marginTop: 12 }} />
+        )}
+      </Modal>
     </div>
   );
 };

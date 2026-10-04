@@ -19,8 +19,10 @@
   },
   "keywords": ["qsl", "ham-radio", "amateur-radio", "card-manager"],
   "author": "BH2VSQ",
-  "license": "MIT",
+  "license": "GPL-3.0",
   "dependencies": {
+    "@ant-design/icons": "^5.6.1",
+    "html5-qrcode": "^2.3.8",
     "express": "^4.18.2",
     "sql.js": "^1.10.3",
     "cors": "^2.8.5",

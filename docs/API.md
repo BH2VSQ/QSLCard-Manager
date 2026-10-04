@@ -160,9 +160,12 @@ Content-Type: application/json
   "mode": "SSB",
   "rst_sent": "59",
   "rst_rcvd": "59",
+  "my_gridsquare": "PM01",
   "comment": "Nice QSO"
 }
 ```
+
+> 说明：`my_gridsquare`（我方网格，MY_GRIDSQUARE）为可选的网格坐标字段，服务端会自动将六位网格归一化为四位（如 `PM01aa` → `PM01`）。
 
 #### 更新日志
 
@@ -235,7 +238,8 @@ Content-Type: application/json
 {
   "log_ids": [1, 2, 3],
   "direction": "TC", // TC 或 RC
-  "mode": "multi" // single 或 multi
+  "mode": "multi", // single 或 multi
+  "qsl_message": "PSE" // 可选，仅发卡(TC)使用：PSE -> "PSE QSL"，TNX -> "QSL TNX"
 }
 ```
 
@@ -354,6 +358,16 @@ GET /api/print/queue
 POST /api/print/queue
 Content-Type: application/json
 
+// QSL 标签
+{
+  "type": "qsl_label",
+  "qsl_id": "24000001TC001",
+  "layout": 1,
+  "log_ids": [1],
+  "qsl_message": "PSE"
+}
+
+// 地址标签
 {
   "type": "address_label",
   "sender": {
@@ -364,6 +378,8 @@ Content-Type: application/json
   }
 }
 ```
+
+> 说明：`qsl_message` 仅对发卡(TC)标签（layout 1）生效，`PSE` 显示「PSE QSL」，`TNX` 显示「QSL TNX」；收卡(RC)标签无需该字段。
 
 #### 生成打印 HTML
 
@@ -486,14 +502,77 @@ Content-Type: application/json
 {
   "default_my_callsign": "BH2VSQ",
   "default_rst_sent": "59",
-  "default_rst_rcvd": "59"
+  "default_rst_rcvd": "59",
+  "update_repo": "https://github.com/BH2VSQ/QSLCard-Manager"
 }
 ```
+
+> 说明：`update_repo` 为自动更新所用的 GitHub 仓库地址，默认 `https://github.com/BH2VSQ/QSLCard-Manager`。
 
 #### 获取呼号列表
 
 ```http
 GET /api/config/callsigns
+```
+
+### 7. 自动更新 (Update)
+
+#### 检查更新
+
+```http
+GET /api/update/check
+```
+
+**响应**:
+
+```json
+{
+  "success": true,
+  "data": {
+    "repo_url": "https://github.com/BH2VSQ/QSLCard-Manager",
+    "current_version": "2.0.0",
+    "latest_version": "2.0.1",
+    "tag_name": "v2.0.1",
+    "name": "v2.0.1",
+    "release_notes": "更新内容...",
+    "published_at": "2026-10-04T00:00:00Z",
+    "html_url": "https://github.com/.../releases/tag/v2.0.1",
+    "has_update": true
+  }
+}
+```
+
+> 说明：通过 GitHub Releases API 查询最新 release，与当前 `package.json` 版本比较（兼容 `v` 前缀）。无 release 时 `latest_version` 为 `null`，`has_update` 为 `false`，并在 `error` 字段说明原因。
+
+#### 执行更新
+
+```http
+POST /api/update/apply
+```
+
+**行为**：依次执行 `git pull --ff-only` 与 `npm install`，成功后延迟重启服务（PM2 环境下 `pm2 restart qsl-manager`，否则 `process.exit(0)`）。
+
+**响应**:
+
+```json
+{
+  "success": true,
+  "message": "更新完成，服务即将重启...",
+  "steps": [
+    { "step": "git pull", "ok": true, "output": "..." },
+    { "step": "npm install", "ok": true, "output": "..." }
+  ]
+}
+```
+
+失败时返回：
+
+```json
+{
+  "success": false,
+  "error": "git pull 失败，请确认本地仓库没有未提交改动、与远程未分叉，或检查网络",
+  "output": "..."
+}
 ```
 
 ## 🔧 错误代码

@@ -209,7 +209,7 @@ npm run pm2:status   # 查看 PM2 状态
 
 ## 📄 许可证
 
-本项目采用 MIT 许可证 - 查看 [LICENSE](LICENSE) 文件了解详情
+本项目采用 GNU General Public License v3.0 (GPL-3.0) 开源许可证 - 查看 [LICENSE](LICENSE) 文件了解详情
 
 ## 📞 支持
 

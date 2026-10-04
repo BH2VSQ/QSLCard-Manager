@@ -10,7 +10,7 @@ let printQueue = [];
 let queueIdCounter = { value: 1 }; // 使用对象以便共享引用
 
 // 添加到打印队列的辅助函数
-const addToPrintQueue = (qslId, layout, logIds) => {
+const addToPrintQueue = (qslId, layout, logIds, qslMessage = 'PSE') => {
   // 获取日志数据用于打印
   const logs = db.prepare(`
     SELECT l.* FROM logs l
@@ -26,10 +26,12 @@ const addToPrintQueue = (qslId, layout, logIds) => {
     layout: layout,
     log_ids: logIds,
     logs: logs, // 直接存储日志数据
+    // PSE/TNX 标签文字选择：PSE -> "PSE QSL"，TNX -> "QSL TNX"
+    qsl_message: qslMessage === 'TNX' ? 'TNX' : 'PSE',
     status: 'ready', // 数据已准备好，可直接打印
     created_at: new Date().toISOString()
   };
-  
+
   printQueue.push(queueItem);
   console.log(`Added QSL ${qslId} to print queue with ${logs.length} logs, layout ${layout}`);
   return queueItem;
@@ -42,7 +44,7 @@ const addToPrintQueue = (qslId, layout, logIds) => {
  */
 router.post('/generate', (req, res) => {
   try {
-    const { log_ids, direction, mode = 'multi' } = req.body;
+    const { log_ids, direction, mode = 'multi', qsl_message = 'PSE' } = req.body;
 
     if (!log_ids || !Array.isArray(log_ids) || log_ids.length === 0) {
       return res.status(400).json({ success: false, error: 'Invalid log_ids' });
@@ -99,7 +101,7 @@ router.post('/generate', (req, res) => {
     const printQueueItems = [];
     for (const card of generatedCards) {
       const layout = direction === 'TC' ? 1 : 2; // TC使用Layout 1, RC使用Layout 2
-      const queueItem = addToPrintQueue(card.qsl_id, layout, card.log_ids);
+      const queueItem = addToPrintQueue(card.qsl_id, layout, card.log_ids, qsl_message);
       printQueueItems.push(queueItem);
     }
 

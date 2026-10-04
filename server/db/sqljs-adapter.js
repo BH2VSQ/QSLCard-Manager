@@ -12,6 +12,9 @@ let SQL;
 let mainDb;
 let addressDb;
 
+// 批量写入时抑制每语句落盘（saveMainDatabase 会导出整个数据库到文件，逐条落盘在大批量导入时非常慢）
+let saveSuppressedCount = 0;
+
 // 确保数据库目录存在
 if (!fs.existsSync(DB_DIR)) {
   fs.mkdirSync(DB_DIR, { recursive: true });
@@ -32,8 +35,11 @@ export async function initDatabase() {
   } else {
     mainDb = new SQL.Database();
     createMainSchema();
-    saveMainDatabase();
   }
+
+  // 确保新增表/字段存在（用于已有数据库升级），并初始化序号水印
+  ensureMainSchema();
+  saveMainDatabase();
 
   // 加载或创建地址数据库
   if (fs.existsSync(ADDRESS_DB_PATH)) {
@@ -139,12 +145,58 @@ function createMainSchema() {
     )
   `);
 
+  mainDb.run(`
+    CREATE TABLE IF NOT EXISTS qsl_serial_counter (
+      year TEXT NOT NULL,
+      direction TEXT NOT NULL,
+      last_serial INTEGER NOT NULL,
+      PRIMARY KEY (year, direction)
+    )
+  `);
+
   // 创建索引
   mainDb.run(`CREATE INDEX IF NOT EXISTS idx_logs_callsign ON logs(station_callsign)`);
   mainDb.run(`CREATE INDEX IF NOT EXISTS idx_logs_date ON logs(qso_date)`);
   mainDb.run(`CREATE INDEX IF NOT EXISTS idx_qsl_status ON qsl_cards(status)`);
-  
+
   saveMainDatabase();
+}
+
+/**
+ * 确保主数据库新增表/字段存在（用于已有数据库升级），并初始化序号水印
+ */
+function ensureMainSchema() {
+  mainDb.run(`
+    CREATE TABLE IF NOT EXISTS qsl_serial_counter (
+      year TEXT NOT NULL,
+      direction TEXT NOT NULL,
+      last_serial INTEGER NOT NULL,
+      PRIMARY KEY (year, direction)
+    )
+  `);
+
+  // 为已有数据初始化序号水印：以当前年份每个方向的最大序号作为起点，
+  // 后续解绑/回收卡号后序号不复用（留出空位）
+  const currentYear = new Date().getFullYear().toString().slice(-2);
+  for (const direction of ['RC', 'TC']) {
+    const existing = mainDb.exec(
+      `SELECT last_serial FROM qsl_serial_counter WHERE year = '${currentYear}' AND direction = '${direction}'`
+    );
+    const hasRow = existing.length > 0 && existing[0].values.length > 0;
+    if (!hasRow) {
+      const maxCard = mainDb.exec(
+        `SELECT qsl_id FROM qsl_cards WHERE direction = '${direction}' AND qsl_id LIKE '${currentYear}%' ORDER BY qsl_id DESC LIMIT 1`
+      );
+      let maxSerial = 0;
+      if (maxCard.length > 0 && maxCard[0].values.length > 0) {
+        const qslId = maxCard[0].values[0][0];
+        maxSerial = parseInt(String(qslId).substring(2, 8), 10) || 0;
+      }
+      mainDb.run(
+        `INSERT OR REPLACE INTO qsl_serial_counter (year, direction, last_serial) VALUES ('${currentYear}', '${direction}', ${maxSerial})`
+      );
+    }
+  }
 }
 
 /**
@@ -261,13 +313,15 @@ export function run(sql, params = [], dbType = 'main') {
       }
     }
     
-    // 保存到文件
-    if (dbType === 'address') {
-      saveAddressDatabase();
-    } else {
-      saveMainDatabase();
+    // 保存到文件（批量写入期间抑制逐条落盘，由 batch() 统一落盘）
+    if (saveSuppressedCount === 0) {
+      if (dbType === 'address') {
+        saveAddressDatabase();
+      } else {
+        saveMainDatabase();
+      }
     }
-    
+
     return {
       changes,
       lastInsertRowid
@@ -277,6 +331,28 @@ export function run(sql, params = [], dbType = 'main') {
     console.error('SQL:', sql);
     console.error('Params:', params);
     throw error;
+  }
+}
+
+/**
+ * 批量执行写入并在结束时只落盘一次
+ * 用于大批量导入/更新，避免每一条 run() 都导出整个数据库到文件
+ * @param {Function} callback - 同步回调，内部执行多次 prepare().run()
+ * @param {string} dbType - 'main' 或 'address'
+ * @returns {*} - 回调返回值
+ */
+export function batch(callback, dbType = 'main') {
+  saveSuppressedCount++;
+  try {
+    const result = callback();
+    if (dbType === 'address') {
+      saveAddressDatabase();
+    } else {
+      saveMainDatabase();
+    }
+    return result;
+  } finally {
+    saveSuppressedCount--;
   }
 }
 
@@ -342,6 +418,7 @@ export const db = {
     saveMainDatabase();
   },
   transaction: (callback) => transaction(callback, 'main'),
+  batch: (callback) => batch(callback, 'main'),
 };
 
 export const addressDbInstance = {
@@ -351,6 +428,7 @@ export const addressDbInstance = {
     saveAddressDatabase();
   },
   transaction: (callback) => transaction(callback, 'address'),
+  batch: (callback) => batch(callback, 'address'),
 };
 
 export default {
@@ -362,6 +440,7 @@ export default {
   run,
   prepare,
   transaction,
+  batch,
   getDb,
   db,
   addressDbInstance

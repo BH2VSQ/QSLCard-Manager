@@ -1,0 +1,73 @@
+name: Build and Release
+
+# 每次推送到 main 分支（或手动触发）时，读取 package.json 版本号，
+# 如果该版本尚未发布，则打包并自动创建 GitHub Release（tag 为 v{version}）。
+# 应用内的自动更新功能会据此查询最新 release 版本。
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Build frontend
+        run: npm run build
+
+      - name: Read version
+        id: version
+        run: echo "version=$(node -p "require('./package.json').version")" >> "$GITHUB_OUTPUT"
+
+      - name: Check if release already exists
+        id: check
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if gh release view "v${{ steps.version.outputs.version }}" >/dev/null 2>&1; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+            echo "Release v${{ steps.version.outputs.version }} already exists, skipping."
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Package release archive
+        if: steps.check.outputs.exists == 'false'
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          mkdir -p release
+          tar -czf "release/qsl-manager-v${VERSION}.tar.gz" \
+            --exclude='./.git' \
+            --exclude='./node_modules' \
+            --exclude='./release' \
+            --exclude='./database' \
+            --exclude='./config.json' \
+            --exclude='./logs' \
+            --exclude='./temp' \
+            --exclude='./.pm2' \
+            --exclude='./.github' \
+            .
+
+      - name: Create release
+        if: steps.check.outputs.exists == 'false'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ steps.version.outputs.version }}
+          name: v${{ steps.version.outputs.version }}
+          generate_release_notes: true
+          files: release/qsl-manager-v${{ steps.version.outputs.version }}.tar.gz

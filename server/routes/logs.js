@@ -7,6 +7,7 @@ import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { parseADIF, generateADIF } from '../utils/adifParser.js';
+import { normalizeGrid } from '../utils/grid.js';
 
 /**
  * 判断是否需要合并日志信息
@@ -291,6 +292,10 @@ router.post('/', (req, res) => {
     if (logData.freq_rx && !logData.band_rx) {
       logData.band_rx = freqToBand(logData.freq_rx);
     }
+    // 归一化我方网格（六位合并为四位）
+    if (logData.my_gridsquare) {
+      logData.my_gridsquare = normalizeGrid(logData.my_gridsquare);
+    }
 
     // 检查重复（5分钟时间窗口）
     const existingId = checkDuplicate(logData);
@@ -309,8 +314,8 @@ router.post('/', (req, res) => {
         my_callsign, station_callsign, qso_date, time_on,
         band, band_rx, freq, freq_rx, mode, submode,
         rst_sent, rst_rcvd, comment, adif_blob,
-        sat_name, prop_mode, qsl_sent_date, qsl_rcvd_date
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        sat_name, prop_mode, my_gridsquare, qsl_sent_date, qsl_rcvd_date
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
 
     const result = stmt.run(
@@ -330,6 +335,7 @@ router.post('/', (req, res) => {
       adifBlob,
       logData.sat_name,
       logData.prop_mode,
+      logData.my_gridsquare,
       logData.qsl_sent_date,
       logData.qsl_rcvd_date
     );
@@ -362,6 +368,10 @@ router.put('/:id', (req, res) => {
     if (logData.freq && !logData.band) {
       logData.band = freqToBand(logData.freq);
     }
+    // 归一化我方网格（六位合并为四位）
+    if (logData.my_gridsquare) {
+      logData.my_gridsquare = normalizeGrid(logData.my_gridsquare);
+    }
 
     const adifBlob = JSON.stringify(logData);
     const stmt = db.prepare(`
@@ -370,7 +380,7 @@ router.put('/:id', (req, res) => {
         band = ?, band_rx = ?, freq = ?, freq_rx = ?,
         mode = ?, submode = ?, rst_sent = ?, rst_rcvd = ?,
         comment = ?, adif_blob = ?, sat_name = ?, prop_mode = ?,
-        qsl_sent_date = ?, qsl_rcvd_date = ?, updated_at = CURRENT_TIMESTAMP
+        my_gridsquare = ?, qsl_sent_date = ?, qsl_rcvd_date = ?, updated_at = CURRENT_TIMESTAMP
       WHERE id = ?
     `);
 
@@ -390,6 +400,7 @@ router.put('/:id', (req, res) => {
       adifBlob,
       logData.sat_name,
       logData.prop_mode,
+      logData.my_gridsquare,
       logData.qsl_sent_date,
       logData.qsl_rcvd_date,
       logId
@@ -680,145 +691,149 @@ router.post('/import', upload.single('file'), async (req, res) => {
     let mergedCount = 0;
     let errorCount = 0;
 
-    for (const record of records) {
-      try {
-        // 检查是否存在相同的日志（5分钟窗口）
-        const existingLog = db.prepare(`
-          SELECT * FROM logs 
-          WHERE station_callsign = ? 
-          AND qso_date = ? 
-          AND ABS(CAST(time_on AS INTEGER) - CAST(? AS INTEGER)) <= 5
-        `).get(record.call, record.qso_date, record.time_on);
-        
-        if (existingLog) {
-          // 检查是否需要合并信息
-          const needsMerge = shouldMergeLog(existingLog, record);
+    // 批量写入：导入期间抑制逐条落盘（sql.js 每次写入都会导出整个数据库到文件），
+    // 全部处理完只落盘一次，避免慢网络 / 低性能服务器下导入耗时过长。
+    db.batch(() => {
+      for (const record of records) {
+        try {
+          // 检查是否存在相同的日志（5分钟窗口）
+          const existingLog = db.prepare(`
+            SELECT * FROM logs 
+            WHERE station_callsign = ? 
+            AND qso_date = ? 
+            AND ABS(CAST(time_on AS INTEGER) - CAST(? AS INTEGER)) <= 5
+          `).get(record.call, record.qso_date, record.time_on);
           
-          if (needsMerge) {
-            // 合并日志信息
-            const mergedData = mergeLogData(existingLog, record);
+          if (existingLog) {
+            // 检查是否需要合并信息
+            const needsMerge = shouldMergeLog(existingLog, record);
             
-            // 更新现有日志
-            const updateResult = db.prepare(`
-              UPDATE logs SET
-                time_off = ?,
-                band_rx = ?,
-                freq_rx = ?,
-                submode = ?,
-                rst_sent = ?,
-                rst_rcvd = ?,
-                tx_pwr = ?,
-                comment = ?,
-                notes = ?,
-                qsl_sent = ?,
-                qsl_rcvd = ?,
-                qsl_sent_date = ?,
-                qsl_rcvd_date = ?,
-                sat_name = ?,
-                sat_mode = ?,
-                prop_mode = ?,
-                my_gridsquare = ?,
-                gridsquare = ?,
-                repeater_callsign = ?,
-                repeater_location = ?,
-                uplink_freq = ?,
-                downlink_freq = ?,
-                updated_at = CURRENT_TIMESTAMP
-              WHERE id = ?
-            `).run(
-              mergedData.time_off,
-              mergedData.band_rx,
-              mergedData.freq_rx,
-              mergedData.submode,
-              mergedData.rst_sent,
-              mergedData.rst_rcvd,
-              mergedData.tx_pwr,
-              mergedData.comment,
-              mergedData.notes,
-              mergedData.qsl_sent,
-              mergedData.qsl_rcvd,
-              mergedData.qsl_sent_date,
-              mergedData.qsl_rcvd_date,
-              mergedData.sat_name,
-              mergedData.sat_mode,
-              mergedData.prop_mode,
-              mergedData.my_gridsquare,
-              mergedData.gridsquare,
-              mergedData.repeater_callsign,
-              mergedData.repeater_location,
-              mergedData.uplink_freq,
-              mergedData.downlink_freq,
-              existingLog.id
-            );
-            
-            if (updateResult.changes > 0) {
-              mergedCount++;
+            if (needsMerge) {
+              // 合并日志信息
+              const mergedData = mergeLogData(existingLog, record);
+              
+              // 更新现有日志
+              const updateResult = db.prepare(`
+                UPDATE logs SET
+                  time_off = ?,
+                  band_rx = ?,
+                  freq_rx = ?,
+                  submode = ?,
+                  rst_sent = ?,
+                  rst_rcvd = ?,
+                  tx_pwr = ?,
+                  comment = ?,
+                  notes = ?,
+                  qsl_sent = ?,
+                  qsl_rcvd = ?,
+                  qsl_sent_date = ?,
+                  qsl_rcvd_date = ?,
+                  sat_name = ?,
+                  sat_mode = ?,
+                  prop_mode = ?,
+                  my_gridsquare = ?,
+                  gridsquare = ?,
+                  repeater_callsign = ?,
+                  repeater_location = ?,
+                  uplink_freq = ?,
+                  downlink_freq = ?,
+                  updated_at = CURRENT_TIMESTAMP
+                WHERE id = ?
+              `).run(
+                mergedData.time_off,
+                mergedData.band_rx,
+                mergedData.freq_rx,
+                mergedData.submode,
+                mergedData.rst_sent,
+                mergedData.rst_rcvd,
+                mergedData.tx_pwr,
+                mergedData.comment,
+                mergedData.notes,
+                mergedData.qsl_sent,
+                mergedData.qsl_rcvd,
+                mergedData.qsl_sent_date,
+                mergedData.qsl_rcvd_date,
+                mergedData.sat_name,
+                mergedData.sat_mode,
+                mergedData.prop_mode,
+                mergedData.my_gridsquare,
+                mergedData.gridsquare,
+                mergedData.repeater_callsign,
+                mergedData.repeater_location,
+                mergedData.uplink_freq,
+                mergedData.downlink_freq,
+                existingLog.id
+              );
+              
+              if (updateResult.changes > 0) {
+                mergedCount++;
+              }
+            } else {
+              duplicateCount++;
             }
-          } else {
-            duplicateCount++;
+            continue;
           }
-          continue;
+  
+          // 插入新日志
+          const result = db.prepare(`
+            INSERT INTO logs (
+              station_callsign, qso_date, time_on, time_off, freq, freq_rx, band, band_rx, mode, submode,
+              rst_sent, rst_rcvd, my_callsign, tx_pwr, comment, notes,
+              sat_name, sat_mode, prop_mode, my_gridsquare, gridsquare,
+              repeater_callsign, repeater_location, uplink_freq, downlink_freq,
+              qsl_sent, qsl_rcvd, qsl_sent_date, qsl_rcvd_date
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          `).run(
+            record.call || '',
+            record.qso_date || '',
+            record.time_on || '',
+            record.time_off || null,
+            record.freq || null,
+            record.freq_rx || null,
+            record.band || '',
+            record.band_rx || null,
+            record.mode || '',
+            record.submode || null,
+            record.rst_sent || '',
+            record.rst_rcvd || '',
+            record.station_callsign || '',
+            record.tx_pwr || null,
+            record.comment || '',
+            record.notes || '',
+            record.sat_name || null,
+            record.sat_mode || null,
+            record.prop_mode || null,
+            record.my_gridsquare || null,
+            record.gridsquare || null,
+            record.repeater_callsign || null,
+            record.repeater_location || null,
+            record.uplink_freq || null,
+            record.downlink_freq || null,
+            record.qsl_sent || 'N',
+            record.qsl_rcvd || 'N',
+            record.qsl_sent_date || null,
+            record.qsl_rcvd_date || null
+          );
+  
+          if (result.changes > 0) {
+            importedCount++;
+          }
+        } catch (error) {
+          console.error('Import record error:', error);
+          errorCount++;
         }
-
-        // 插入新日志
-        const result = db.prepare(`
-          INSERT INTO logs (
-            station_callsign, qso_date, time_on, time_off, freq, freq_rx, band, band_rx, mode, submode,
-            rst_sent, rst_rcvd, my_callsign, tx_pwr, comment, notes,
-            sat_name, sat_mode, prop_mode, my_gridsquare, gridsquare,
-            repeater_callsign, repeater_location, uplink_freq, downlink_freq,
-            qsl_sent, qsl_rcvd, qsl_sent_date, qsl_rcvd_date
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        `).run(
-          record.call || '',
-          record.qso_date || '',
-          record.time_on || '',
-          record.time_off || null,
-          record.freq || null,
-          record.freq_rx || null,
-          record.band || '',
-          record.band_rx || null,
-          record.mode || '',
-          record.submode || null,
-          record.rst_sent || '',
-          record.rst_rcvd || '',
-          record.station_callsign || '',
-          record.tx_pwr || null,
-          record.comment || '',
-          record.notes || '',
-          record.sat_name || null,
-          record.sat_mode || null,
-          record.prop_mode || null,
-          record.my_gridsquare || null,
-          record.gridsquare || null,
-          record.repeater_callsign || null,
-          record.repeater_location || null,
-          record.uplink_freq || null,
-          record.downlink_freq || null,
-          record.qsl_sent || 'N',
-          record.qsl_rcvd || 'N',
-          record.qsl_sent_date || null,
-          record.qsl_rcvd_date || null
-        );
-
-        if (result.changes > 0) {
-          importedCount++;
-        }
-      } catch (error) {
-        console.error('Import record error:', error);
-        errorCount++;
       }
-    }
 
-    // 自动重排序
-    try {
-      const logs = db.prepare('SELECT id FROM logs ORDER BY qso_date, time_on').all();
-      logs.forEach((log, index) => {
-        db.prepare('UPDATE logs SET sort_id = ? WHERE id = ?').run(index + 1, log.id);
-      });
-    } catch (error) {
-      console.error('Reorder after import error:', error);
-    }
+      // 自动重排序
+      try {
+        const logs = db.prepare('SELECT id FROM logs ORDER BY qso_date, time_on').all();
+        logs.forEach((log, index) => {
+          db.prepare('UPDATE logs SET sort_id = ? WHERE id = ?').run(index + 1, log.id);
+        });
+      } catch (error) {
+        console.error('Reorder after import error:', error);
+      }
+    });
 
     // 删除临时文件
     fs.unlinkSync(req.file.path);

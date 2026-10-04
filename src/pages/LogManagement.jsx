@@ -10,6 +10,8 @@ import {
   Modal,
   Typography,
   Popconfirm,
+  Radio,
+  Descriptions,
 } from 'antd';
 import {
   PlusOutlined,
@@ -22,10 +24,12 @@ import {
   MergeCellsOutlined,
   PrinterOutlined,
   DisconnectOutlined,
+  EyeOutlined,
 } from '@ant-design/icons';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { logsApi, qslApi, printApi } from '../api';
 import { MODES_LIST } from '../utils/constants';
+import { formatDate, formatTime } from '../utils/formatters';
 
 const { Title } = Typography;
 
@@ -46,6 +50,46 @@ const LogManagement = () => {
     mode: '',
     qsl_id: '',
   });
+
+  // 生成卡片选项（生成模式 + PSE/TNX 标签文字）
+  const [generateModal, setGenerateModal] = useState({
+    open: false,
+    direction: 'RC',
+    logIds: [],
+  });
+  const [genMode, setGenMode] = useState('multi');
+  const [genQslMessage, setGenQslMessage] = useState('PSE');
+
+  // 补打标签时的 PSE/TNX 选择
+  const [qslMessageModal, setQslMessageModal] = useState({
+    open: false,
+    resolve: null,
+  });
+  const [tempQslMessage, setTempQslMessage] = useState('PSE');
+
+  const promptQslMessage = () =>
+    new Promise((resolve) => {
+      setTempQslMessage('PSE');
+      setQslMessageModal({ open: true, resolve });
+    });
+
+  // 日志详情查看
+  const [detailModal, setDetailModal] = useState({ open: false, loading: false, log: null });
+
+  const handleViewDetail = async (id) => {
+    setDetailModal({ open: true, loading: true, log: null });
+    try {
+      const response = await logsApi.getById(id);
+      if (response.success) {
+        setDetailModal({ open: true, loading: false, log: response.data });
+      } else {
+        setDetailModal({ open: false, loading: false, log: null });
+      }
+    } catch (error) {
+      message.error('获取日志详情失败');
+      setDetailModal({ open: false, loading: false, log: null });
+    }
+  };
 
   useEffect(() => {
     fetchLogs();
@@ -178,31 +222,34 @@ const LogManagement = () => {
       const file = e.target.files[0];
       if (!file) return;
 
+      // 导入可能耗时较长（慢网络 / 低性能服务器），使用持续加载提示，避免用户误以为卡死
+      const hide = message.loading('正在导入 ADIF 文件，请耐心等待...', 0);
       try {
         setLoading(true);
         const response = await logsApi.importAdif(file);
         if (response.success) {
           const { imported_count, merged_count, duplicate_count, error_count } = response.data;
           let successMsg = `导入成功：${imported_count} 条新记录`;
-          
+
           if (merged_count > 0) {
             successMsg += `，合并 ${merged_count} 条记录`;
           }
-          
+
           if (duplicate_count > 0) {
             successMsg += `，跳过 ${duplicate_count} 条重复记录`;
           }
-          
+
           if (error_count > 0) {
             successMsg += `，${error_count} 条记录处理失败`;
           }
-          
+
           message.success(successMsg);
           fetchLogs();
         }
       } catch (error) {
-        message.error('导入失败');
+        message.error('导入失败：' + (error.response?.data?.error || error.message || '未知错误'));
       } finally {
+        hide();
         setLoading(false);
       }
     };
@@ -249,55 +296,55 @@ const LogManagement = () => {
         const response = await logsApi.getById(logId);
         if (response.success) {
           const log = response.data;
-          
+
           // TC (发卡): 跳过已发卡的
           if (direction === 'TC' && log.qsl_sent === 'Y') {
             skippedCount++;
             continue;
           }
-          
+
           // RC (收卡): 跳过已收卡的
           if (direction === 'RC' && log.qsl_rcvd === 'Y') {
             skippedCount++;
             continue;
           }
-          
+
           logsToProcess.push(logId);
         }
       }
 
+      setLoading(false);
+
       if (logsToProcess.length === 0) {
         message.info('所有勾选的日志都已经有相应的卡片记录，已全部跳过。');
-        setLoading(false);
         return;
       }
 
-      // 确定模式：单卡还是多卡
-      let mode = 'multi';
-      if (logsToProcess.length > 1) {
-        // 显示对话框让用户选择
-        const result = await new Promise((resolve) => {
-          Modal.confirm({
-            title: '选择生成模式',
-            content: `共有 ${logsToProcess.length} 条日志需要处理，请选择生成模式：`,
-            okText: '每条日志一张卡片',
-            cancelText: '所有日志共用一张卡片',
-            onOk: () => resolve('multi'),
-            onCancel: () => resolve('single'),
-          });
-        });
-        mode = result;
-      }
+      // 弹出选项对话框：生成模式（多条时）+ 标签文字（PSE/TNX）
+      setGenMode('multi');
+      setGenQslMessage('PSE');
+      setGenerateModal({ open: true, direction, logIds: logsToProcess });
+    } catch (error) {
+      setLoading(false);
+      message.error('生成卡片失败');
+      console.error('Generate QSL error:', error);
+    }
+  };
 
-      // 调用生成接口
+  const handleConfirmGenerate = async () => {
+    const { direction, logIds } = generateModal;
+    const mode = logIds.length > 1 ? genMode : 'multi';
+    try {
+      setLoading(true);
       const response = await qslApi.generate({
-        log_ids: logsToProcess,
+        log_ids: logIds,
         direction,
         mode,
+        qsl_message: genQslMessage,
       });
 
       if (response.success) {
-        const count = response.data.length || logsToProcess.length;
+        const count = response.data.length || logIds.length;
         message.success(`成功为 ${count} 条日志生成卡片`);
         setSelectedRowKeys([]);
         fetchLogs();
@@ -307,6 +354,7 @@ const LogManagement = () => {
       console.error('Generate QSL error:', error);
     } finally {
       setLoading(false);
+      setGenerateModal((prev) => ({ ...prev, open: false }));
     }
   };
 
@@ -315,7 +363,7 @@ const LogManagement = () => {
       message.warning('请勾选一个日志进行标签补打');
       return;
     }
-    
+
     if (selectedRowKeys.length > 1) {
       message.warning('请一次只选择一个日志进行标签补打');
       return;
@@ -327,14 +375,22 @@ const LogManagement = () => {
       const response = await logsApi.getById(logId);
       if (response.success && response.data.qsl_cards && response.data.qsl_cards.length > 0) {
         const cards = response.data.qsl_cards;
-        
+
         // 如果只有一张卡，直接补打
         if (cards.length === 1) {
           const card = cards[0];
+          // 只有发卡(TC)标签才需要选择 PSE/TNX
+          let qslMessage = 'PSE';
+          if (card.direction === 'TC') {
+            const chosen = await promptQslMessage();
+            if (!chosen) return; // 用户取消
+            qslMessage = chosen;
+          }
           await printApi.addToQueue({
             type: 'qsl_label',
             qsl_id: card.qsl_id,
             layout: card.direction === 'TC' ? 1 : 2,
+            qsl_message: qslMessage,
           });
           message.success('已添加到打印队列');
         } else {
@@ -348,10 +404,17 @@ const LogManagement = () => {
                     <Button
                       block
                       onClick={async () => {
+                        let qslMessage = 'PSE';
+                        if (card.direction === 'TC') {
+                          const chosen = await promptQslMessage();
+                          if (!chosen) return;
+                          qslMessage = chosen;
+                        }
                         await printApi.addToQueue({
                           type: 'qsl_label',
                           qsl_id: card.qsl_id,
                           layout: card.direction === 'TC' ? 1 : 2,
+                          qsl_message: qslMessage,
                         });
                         message.success('已添加到打印队列');
                         Modal.destroyAll();
@@ -490,10 +553,18 @@ const LogManagement = () => {
     {
       title: '操作',
       key: 'action',
-      width: 100,
+      width: 160,
       fixed: 'right',
       render: (_, record) => (
         <Space size="small">
+          <Button
+            type="link"
+            size="small"
+            icon={<EyeOutlined />}
+            onClick={() => handleViewDetail(record.id)}
+          >
+            详情
+          </Button>
           <Button
             type="link"
             size="small"
@@ -651,6 +722,7 @@ const LogManagement = () => {
           dataSource={logs}
           rowKey="id"
           loading={loading}
+          scroll={{ x: 'max-content' }}
           pagination={{
             ...pagination,
             showSizeChanger: true,
@@ -663,6 +735,103 @@ const LogManagement = () => {
           })}
         />
       </Card>
+
+      {/* 生成卡片选项对话框（生成模式 + 标签文字 PSE/TNX） */}
+      <Modal
+        title="生成 QSL 卡片"
+        open={generateModal.open}
+        onCancel={() => setGenerateModal((prev) => ({ ...prev, open: false }))}
+        onOk={handleConfirmGenerate}
+        okText="生成"
+        cancelText="取消"
+      >
+        <Space direction="vertical" style={{ width: '100%' }}>
+          {generateModal.logIds.length > 1 && (
+            <div>
+              <div style={{ marginBottom: 8 }}>生成模式：</div>
+              <Radio.Group value={genMode} onChange={(e) => setGenMode(e.target.value)}>
+                <Radio value="multi">每条日志一张卡片</Radio>
+                <Radio value="single">所有日志共用一张卡片</Radio>
+              </Radio.Group>
+            </div>
+          )}
+          {generateModal.direction === 'TC' && (
+            <div>
+              <div style={{ marginBottom: 8 }}>标签文字：</div>
+              <Radio.Group value={genQslMessage} onChange={(e) => setGenQslMessage(e.target.value)}>
+                <Radio value="PSE">PSE QSL</Radio>
+                <Radio value="TNX">QSL TNX</Radio>
+              </Radio.Group>
+            </div>
+          )}
+        </Space>
+      </Modal>
+
+      {/* 补打标签文字选择（PSE/TNX） */}
+      <Modal
+        title="标签文字"
+        open={qslMessageModal.open}
+        onCancel={() => {
+          qslMessageModal.resolve && qslMessageModal.resolve(null);
+          setQslMessageModal({ open: false, resolve: null });
+        }}
+        onOk={() => {
+          qslMessageModal.resolve && qslMessageModal.resolve(tempQslMessage);
+          setQslMessageModal({ open: false, resolve: null });
+        }}
+        okText="确定"
+        cancelText="取消"
+      >
+        <Radio.Group value={tempQslMessage} onChange={(e) => setTempQslMessage(e.target.value)}>
+          <Radio value="PSE">PSE QSL</Radio>
+          <Radio value="TNX">QSL TNX</Radio>
+        </Radio.Group>
+      </Modal>
+
+      {/* 日志详情查看 */}
+      <Modal
+        title="日志详情"
+        open={detailModal.open}
+        onCancel={() => setDetailModal({ open: false, loading: false, log: null })}
+        footer={null}
+        width={640}
+      >
+        {detailModal.loading ? (
+          <div style={{ textAlign: 'center', padding: 24 }}>加载中...</div>
+        ) : detailModal.log ? (
+          <Descriptions bordered column={2} size="small">
+            <Descriptions.Item label="ID">{detailModal.log.id}</Descriptions.Item>
+            <Descriptions.Item label="我方呼号">{detailModal.log.my_callsign || '-'}</Descriptions.Item>
+            <Descriptions.Item label="对方呼号">{detailModal.log.station_callsign || '-'}</Descriptions.Item>
+            <Descriptions.Item label="日期">{formatDate(detailModal.log.qso_date)}</Descriptions.Item>
+            <Descriptions.Item label="时间">{formatTime(detailModal.log.time_on)}</Descriptions.Item>
+            <Descriptions.Item label="模式">{detailModal.log.mode || '-'}</Descriptions.Item>
+            <Descriptions.Item label="子模式">{detailModal.log.submode || '-'}</Descriptions.Item>
+            <Descriptions.Item label="我方网格 (MY_GRIDSQUARE)">{detailModal.log.my_gridsquare || '-'}</Descriptions.Item>
+            <Descriptions.Item label="TX波段">{detailModal.log.band || '-'}</Descriptions.Item>
+            <Descriptions.Item label="RX波段">{detailModal.log.band_rx || '-'}</Descriptions.Item>
+            <Descriptions.Item label="TX频率 (MHz)">{detailModal.log.freq ?? '-'}</Descriptions.Item>
+            <Descriptions.Item label="RX频率 (MHz)">{detailModal.log.freq_rx ?? '-'}</Descriptions.Item>
+            <Descriptions.Item label="发送信号报告">{detailModal.log.rst_sent || '-'}</Descriptions.Item>
+            <Descriptions.Item label="接收信号报告">{detailModal.log.rst_rcvd || '-'}</Descriptions.Item>
+            <Descriptions.Item label="发卡状态">
+              {detailModal.log.qsl_sent !== 'Y'
+                ? '未发'
+                : (detailModal.log.qsl_sent_date ? '已发出' : '待出库')}
+            </Descriptions.Item>
+            <Descriptions.Item label="收卡状态">
+              {detailModal.log.qsl_rcvd !== 'Y'
+                ? '未收'
+                : (detailModal.log.qsl_rcvd_date ? '已收到' : '待入库')}
+            </Descriptions.Item>
+            <Descriptions.Item label="发卡日期">{detailModal.log.qsl_sent_date ? formatDate(detailModal.log.qsl_sent_date) : '-'}</Descriptions.Item>
+            <Descriptions.Item label="收卡日期">{detailModal.log.qsl_rcvd_date ? formatDate(detailModal.log.qsl_rcvd_date) : '-'}</Descriptions.Item>
+            <Descriptions.Item label="卫星">{detailModal.log.sat_name || '-'}</Descriptions.Item>
+            <Descriptions.Item label="传播模式">{detailModal.log.prop_mode || '-'}</Descriptions.Item>
+            <Descriptions.Item label="备注" span={2}>{detailModal.log.comment || '-'}</Descriptions.Item>
+          </Descriptions>
+        ) : null}
+      </Modal>
     </div>
   );
 };

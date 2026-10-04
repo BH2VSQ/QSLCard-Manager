@@ -298,7 +298,8 @@ function loadConfig() {
     theme: 'light',
     continuous_log: false,
     nfc_port: '',
-    nfc_baudrate: 9600
+    nfc_baudrate: 9600,
+    update_repo: 'https://github.com/BH2VSQ/QSLCard-Manager'
   };
 
   if (!fs.existsSync(CONFIG_FILE)) {

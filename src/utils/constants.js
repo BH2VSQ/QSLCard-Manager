@@ -2,7 +2,7 @@
 export const MODES_LIST = [
   '', 'AM', 'ARDOP', 'ATV', 'C4FM', 'CHIP', 'CLO', 'CW', 'DIGITALVOICE',
   'DOMINO', 'DSTAR', 'FAX', 'FM', 'FSK441', 'FT8', 'FT4', 'HELL', 'JT4',
-  'JT6M', 'JT9', 'JT44', 'JT65', 'MFSK', 'MSK144', 'MT63', 'OLIVIA',
+  'JT6M', 'JT9', 'JTTY', 'JT44', 'JT65', 'MFSK', 'MSK144', 'MT63', 'OLIVIA',
   'OPERA', 'PACKET', 'PAX', 'PSK', 'PSK2K', 'Q15', 'QRA64', 'ROS',
   'RTTY', 'RTTYM', 'SSB', 'SSTV', 'THOR', 'THRB', 'V4', 'V5', 'VOI',
   'WINMOR', 'WSPR', 'AMSS', 'ASCI', 'PCW', 'EYEBALL'
@@ -41,6 +41,14 @@ export const STATUS_TEXT = {
   pending: '待处理',
   in_stock: '已入库',
   out_stock: '已出库'
+};
+
+// 根据方向获取状态文本（pending 区分待出库/待入库）
+export const getStatusText = (status, direction) => {
+  if (status === 'pending') {
+    return direction === 'TC' ? '待出库' : '待入库';
+  }
+  return STATUS_TEXT[status] || status || '-';
 };
 
 // 方向文本映射

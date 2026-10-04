@@ -31,6 +31,8 @@ export const logsApi = {
     formData.append('file', file);
     return apiClient.post('/logs/import', formData, {
       headers: { 'Content-Type': 'multipart/form-data' },
+      // 上传导入可能耗时很长（慢网络 / 低性能服务器），取消超时限制，由前端加载提示引导用户等待
+      timeout: 0,
     });
   },
 

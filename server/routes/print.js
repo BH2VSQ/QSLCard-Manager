@@ -11,7 +11,7 @@ const router = express.Router();
  */
 router.post('/queue', (req, res) => {
   try {
-    const { type, qsl_id, layout, log_ids, sender, receiver } = req.body;
+    const { type, qsl_id, layout, log_ids, sender, receiver, qsl_message } = req.body;
 
     if (!type || !['qsl_label', 'address_label'].includes(type)) {
       return res.status(400).json({ success: false, error: 'Invalid type' });
@@ -25,6 +25,8 @@ router.post('/queue', (req, res) => {
       log_ids,
       sender,
       receiver,
+      // PSE/TNX 标签文字选择：PSE -> "PSE QSL"，TNX -> "QSL TNX"
+      qsl_message: qsl_message === 'TNX' ? 'TNX' : 'PSE',
       status: 'ready',
       created_at: new Date().toISOString()
     };
@@ -194,7 +196,7 @@ router.get('/html/:queue_id', async (req, res) => {
         return res.status(400).json({ success: false, error: 'QSL data not found' });
       }
       console.log(`Generating QSL HTML for ${item.qsl_id} with ${item.logs.length} logs, layout ${item.layout}`);
-      htmlContent = await generateQSLPrintHTML(item.qsl_id, item.logs, item.layout || 1);
+      htmlContent = await generateQSLPrintHTML(item.qsl_id, item.logs, item.layout || 1, item.qsl_message);
     } else if (item.type === 'address_label') {
       // 地址标签单页打印 - 每次打印一张标签
       const addressData = item.sender || item.receiver;
@@ -291,7 +293,7 @@ router.post('/html/batch', async (req, res) => {
       try {
         if (item.type === 'qsl_label' && item.qsl_id && item.logs) {
           console.log(`Generating QSL HTML for ${item.qsl_id} (Layout ${item.layout || 1}, ${item.logs.length} logs)`);
-          itemHTML = await generateQSLPrintHTML(item.qsl_id, item.logs, item.layout || 1);
+          itemHTML = await generateQSLPrintHTML(item.qsl_id, item.logs, item.layout || 1, item.qsl_message);
           itemInfo = `QSL-${item.qsl_id} (Layout ${item.layout || 1}, ${item.logs.length} logs)`;
         }
       } catch (error) {

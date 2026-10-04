@@ -34,6 +34,8 @@ export const configApi = {
       headers: {
         'Content-Type': 'multipart/form-data',
       },
+      // 数据库迁移可能耗时较长，取消超时限制，避免前端提前判定失败
+      timeout: 0,
     });
   },
 };

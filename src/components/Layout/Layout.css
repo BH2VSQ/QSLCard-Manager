@@ -11,3 +11,40 @@
   overflow: hidden;
   text-overflow: ellipsis;
 }
+
+/* 侧边栏：桌面端固定高度，不随页面内容滚动（仅菜单内部滚动） */
+@media (min-width: 992px) {
+  .app-sider {
+    position: sticky !important;
+    top: 0;
+    height: 100vh;
+  }
+
+  .app-sider .ant-layout-sider-children {
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+
+  .app-sider .ant-menu {
+    flex: 1;
+    overflow-y: auto;
+  }
+}
+
+/* 移动端优化 */
+@media (max-width: 576px) {
+  .app-header {
+    padding: 0 12px !important;
+  }
+
+  .app-header-title {
+    font-size: 16px !important;
+  }
+
+  .app-content {
+    margin: 12px 8px !important;
+    padding: 12px !important;
+  }
+}

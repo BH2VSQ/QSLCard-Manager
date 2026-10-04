@@ -1,4 +1,5 @@
 import QRCode from 'qrcode';
+import { extractGrids } from '../utils/grid.js';
 
 /**
  * 生成QSL标签的HTML打印内容 - 完全基于Python main.py的精确布局
@@ -7,12 +8,12 @@ import QRCode from 'qrcode';
  * @param {number} layout - 布局类型（1 或 2）
  * @returns {Promise<string>} - HTML内容
  */
-export const generateQSLPrintHTML = async (qslId, logs, layout) => {
+export const generateQSLPrintHTML = async (qslId, logs, layout, qslMessage = 'PSE') => {
   try {
     console.log(`Generating QSL HTML: ${qslId}, layout: ${layout}, logs: ${logs.length}`);
-    
+
     if (layout === 1) {
-      return await generateLayout1HTML(qslId, logs);
+      return await generateLayout1HTML(qslId, logs, qslMessage);
     } else {
       return await generateLayout2HTML(qslId);
     }
@@ -430,7 +431,7 @@ function getAddressLabelCSS() {
  * 生成Layout 1 HTML - 完全按照Python generate_layout_1实现
  * 70mm x 50mm 标签，6x6网格布局，每页4条QSO数据，最后一页独立QR码
  */
-async function generateLayout1HTML(qslId, logs) {
+async function generateLayout1HTML(qslId, logs, qslMessage = 'PSE') {
   try {
     // 按每页4条日志分组 - 完全按照Python逻辑
     const logsPerPage = 4;
@@ -473,7 +474,7 @@ async function generateLayout1HTML(qslId, logs) {
 
       pagesHTML += `
         <div class="qsl-page" ${pageIndex > 0 ? 'style="page-break-before: always;"' : ''}>
-          ${generateQSODataPageHTML(toRadio, chunk, qslId, qrDataUrl)}
+          ${generateQSODataPageHTML(toRadio, chunk, qslId, qrDataUrl, qslMessage)}
         </div>
       `;
     }
@@ -532,7 +533,14 @@ async function generateLayout1HTML(qslId, logs) {
 /**
  * 生成QSO数据页面HTML - 按照Python 6x6网格布局精确实现
  */
-function generateQSODataPageHTML(toRadio, logs, qslId, qrDataUrl) {
+function generateQSODataPageHTML(toRadio, logs, qslId, qrDataUrl, qslMessage = 'PSE') {
+  // PSE -> "PSE QSL"，TNX -> "QSL TNX"
+  const qslText = qslMessage === 'TNX' ? 'QSL TNX' : 'PSE QSL';
+  // 网格（我方网格 MY_GRIDSQUARE）显示在 QSO 信息标签二维码下方
+  const grids = extractGrids(logs);
+  const gridHtml = grids.length > 0
+    ? grids.map((g) => `<div class="qr-area-grid">${g}</div>`).join('')
+    : '';
   return `
     <div class="qso-grid">
       <!-- Row 0: Header -->
@@ -541,9 +549,9 @@ function generateQSODataPageHTML(toRadio, logs, qslId, qrDataUrl) {
           <span class="to-radio-label">To Radio:</span>
           <span class="callsign">${toRadio}</span>
         </div>
-        <div class="pse-qsl">PSE QSL TNX</div>
+        <div class="pse-qsl">${qslText}</div>
       </div>
-      
+
       <!-- Row 1: Column Headers -->
       <div class="column-headers">
         <div class="header-cell">Date</div>
@@ -553,14 +561,15 @@ function generateQSODataPageHTML(toRadio, logs, qslId, qrDataUrl) {
         <div class="header-cell">Mode</div>
         <div class="qr-area-header"></div>
       </div>
-      
+
       <!-- Rows 2-5: QSO Data -->
       <div class="qso-data-rows">
         ${generateQSORowsHTML(logs)}
-        
+
         <!-- QR Code Area (Col 5, Rows 1-5) -->
         <div class="qr-code-area">
           <img src="${qrDataUrl}" alt="QR Code" class="qr-image" />
+          ${gridHtml}
         </div>
       </div>
     </div>
@@ -915,18 +924,30 @@ function getLayout1CSS() {
       width: 11.67mm; /* Col 6 width */
       height: 33.33mm; /* Rows 1-5 */
       display: flex;
+      flex-direction: column;
       align-items: center;
       justify-content: center;
       /* Python QR_Y_OFFSET_MM向上偏移 */
       transform: translateY(-1.7mm);
     }
-    
+
     .qr-image {
       width: 8mm; /* 减小QR码尺寸 */
       height: 8mm;
       object-fit: contain;
     }
-    
+
+    /* 网格显示在 QSO 信息标签二维码下方 */
+    .qr-area-grid {
+      font-family: 'MapleMono', monospace;
+      font-size: 5pt;
+      font-weight: bold;
+      text-align: center;
+      margin-top: 0.8mm;
+      line-height: 1.1;
+      letter-spacing: -0.2pt;
+    }
+
     /* 最终QR码页面样式 */
     .qr-page .final-qr-container {
       width: 70mm;
@@ -945,7 +966,7 @@ function getLayout1CSS() {
       height: 20mm;
       object-fit: contain;
     }
-    
+
     .qsl-id-text {
       font-family: 'MapleMono', monospace;
       font-size: 10pt; /* 减小字体 */
@@ -1081,7 +1102,7 @@ function getLayout2CSS() {
       height: 25mm;
       object-fit: contain;
     }
-    
+
     .qsl-id-text {
       font-family: 'MapleMono', monospace;
       font-size: 12pt;

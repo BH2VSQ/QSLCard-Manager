@@ -5,4 +5,5 @@ export { default as statsApi } from './stats';
 export { default as addressApi } from './address';
 export { default as printApi } from './print';
 export { default as configApi } from './config';
+export { default as updateApi } from './update';
 export { default as apiClient } from './client';

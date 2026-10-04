@@ -17,30 +17,36 @@ class QSLIDGenerator {
    */
   static getNextSerial(direction) {
     const currentYear = new Date().getFullYear().toString().slice(-2);
-    
-    // 查询当前年份最新的卡号
+
+    // 现有卡片中的最大序号
     const lastCard = db.prepare(`
       SELECT qsl_id FROM qsl_cards
       WHERE direction = ? AND qsl_id LIKE ?
-      ORDER BY created_at DESC, qsl_id DESC
+      ORDER BY qsl_id DESC
       LIMIT 1
     `).get(direction, `${currentYear}%`);
 
-    if (!lastCard) {
-      return 1; // 新年度第一张卡
+    let maxSerial = 0;
+    if (lastCard) {
+      maxSerial = parseInt(String(lastCard.qsl_id).substring(2, 8), 10) || 0;
     }
 
-    const lastId = lastCard.qsl_id;
-    const lastYear = lastId.substring(0, 2);
-    
-    // 如果年份不同，重置序号
-    if (lastYear !== currentYear) {
-      return 1;
-    }
+    // 序号水印：历史已分配的最大序号（解绑/回收后不复用，留出空位）
+    const counter = db.prepare(`
+      SELECT last_serial FROM qsl_serial_counter
+      WHERE year = ? AND direction = ?
+    `).get(currentYear, direction);
+    const watermark = counter ? (counter.last_serial || 0) : 0;
 
-    // 提取序号并加1
-    const lastSerial = parseInt(lastId.substring(2, 8), 10);
-    return lastSerial + 1;
+    const nextSerial = Math.max(maxSerial, watermark) + 1;
+
+    // 更新水印
+    db.prepare(`
+      INSERT OR REPLACE INTO qsl_serial_counter (year, direction, last_serial)
+      VALUES (?, ?, ?)
+    `).run(currentYear, direction, nextSerial);
+
+    return nextSerial;
   }
 
   /**

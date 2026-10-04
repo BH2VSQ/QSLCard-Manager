@@ -86,6 +86,7 @@ const LogEditor = () => {
           sat_name: log.sat_name,
           prop_mode: log.prop_mode,
           submode: log.submode,
+          my_gridsquare: log.my_gridsquare,
           qsl_sent_date: log.qsl_sent_date,
           qsl_rcvd_date: log.qsl_rcvd_date,
         });
@@ -235,6 +236,7 @@ const LogEditor = () => {
         sat_name: null,
         prop_mode: null,
         submode: null,
+        my_gridsquare: values.my_gridsquare || null,
         qsl_sent_date: values.qsl_sent_date || null,
         qsl_rcvd_date: values.qsl_rcvd_date || null,
       };
@@ -363,7 +365,7 @@ const LogEditor = () => {
                 name="time_on"
                 rules={[{ required: true, message: '请输入时间' }]}
               >
-                <Input placeholder="HHMM" maxLength={4} />
+                <Input placeholder="HHMMSS" maxLength={6} />
               </Form.Item>
             </Col>
           </Row>
@@ -403,39 +405,39 @@ const LogEditor = () => {
               </Form.Item>
             </Col>
             <Col span={6}>
-              <Form.Item 
-                label="发射频率 (MHz):" 
-                name="freq"
-                rules={[
-                  ({ getFieldValue }) => ({
-                    validator(_, value) {
-                      const band = getFieldValue('band');
-                      if (band === 'N/A') {
-                        return Promise.resolve();
-                      }
-                      if (!value) {
-                        return Promise.reject(new Error('请输入发射频率'));
-                      }
-                      return Promise.resolve();
-                    },
-                  }),
-                ]}
-              >
-                <Form.Item noStyle shouldUpdate={(prevValues, currentValues) => prevValues.band !== currentValues.band}>
-                  {({ getFieldValue }) => {
-                    const band = getFieldValue('band');
-                    const placeholder = band === 'N/A' ? '波段为N/A时无需填写' : '例如: 14.250';
-                    const disabled = band === 'N/A';
-                    
-                    return (
+              <Form.Item noStyle shouldUpdate={(prevValues, currentValues) => prevValues.band !== currentValues.band}>
+                {({ getFieldValue }) => {
+                  const band = getFieldValue('band');
+                  const placeholder = band === 'N/A' ? '波段为N/A时无需填写' : '例如: 14.250';
+                  const disabled = band === 'N/A';
+
+                  return (
+                    <Form.Item
+                      label="发射频率 (MHz):"
+                      name="freq"
+                      rules={[
+                        ({ getFieldValue }) => ({
+                          validator(_, value) {
+                            const band = getFieldValue('band');
+                            if (band === 'N/A') {
+                              return Promise.resolve();
+                            }
+                            if (!value) {
+                              return Promise.reject(new Error('请输入发射频率'));
+                            }
+                            return Promise.resolve();
+                          },
+                        }),
+                      ]}
+                    >
                       <Input
                         placeholder={placeholder}
                         disabled={disabled}
                         onBlur={handleFreqBlur}
                       />
-                    );
-                  }}
-                </Form.Item>
+                    </Form.Item>
+                  );
+                }}
               </Form.Item>
             </Col>
             <Col span={6}>
@@ -474,12 +476,25 @@ const LogEditor = () => {
               </Form.Item>
             </Col>
             <Col span={8}>
-              <Form.Item 
-                label="接收信号报告:" 
+              <Form.Item
+                label="接收信号报告:"
                 name="rst_rcvd"
                 rules={[{ required: true, message: '请输入接收信号报告' }]}
               >
                 <Input placeholder="例如: 59" />
+              </Form.Item>
+            </Col>
+          </Row>
+
+          {/* 我方网格坐标 */}
+          <Row gutter={16}>
+            <Col span={8}>
+              <Form.Item label="我方网格 (MY_GRIDSQUARE):" name="my_gridsquare">
+                <Input
+                  placeholder="例如: PM01"
+                  maxLength={8}
+                  style={{ textTransform: 'uppercase' }}
+                />
               </Form.Item>
             </Col>
           </Row>

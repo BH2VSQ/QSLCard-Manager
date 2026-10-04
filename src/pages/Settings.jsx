@@ -20,8 +20,10 @@ import {
   StarOutlined,
   StarFilled,
   WarningOutlined,
+  ReloadOutlined,
+  CloudDownloadOutlined,
 } from '@ant-design/icons';
-import { configApi } from '../api';
+import { configApi, updateApi } from '../api';
 import useThemeStore from '../store/themeStore';
 
 const { Title, Text } = Typography;
@@ -33,6 +35,12 @@ const Settings = () => {
   const [loading, setLoading] = useState(false);
   const [addModalVisible, setAddModalVisible] = useState(false);
   const { theme, toggleTheme } = useThemeStore();
+
+  // 自动更新相关状态
+  const [updateRepo, setUpdateRepo] = useState('');
+  const [updateInfo, setUpdateInfo] = useState(null);
+  const [checkingUpdate, setCheckingUpdate] = useState(false);
+  const [applyingUpdate, setApplyingUpdate] = useState(false);
 
   useEffect(() => {
     fetchData();
@@ -48,6 +56,7 @@ const Settings = () => {
 
       if (configRes.success) {
         setConfig(configRes.data);
+        setUpdateRepo(configRes.data.update_repo || '');
       } else {
         console.error('Failed to fetch config:', configRes);
       }
@@ -232,6 +241,66 @@ const Settings = () => {
     input.click();
   };
 
+  const handleSaveUpdateRepo = async () => {
+    try {
+      const response = await configApi.updateConfig({ update_repo: updateRepo.trim() });
+      if (response.success) {
+        setConfig((prev) => ({ ...prev, update_repo: response.data.update_repo }));
+        message.success('更新库地址已保存');
+      }
+    } catch (error) {
+      message.error('保存失败: ' + (error.response?.data?.error || error.message));
+    }
+  };
+
+  const handleCheckUpdate = async () => {
+    try {
+      setCheckingUpdate(true);
+      const response = await updateApi.check();
+      if (response.success) {
+        setUpdateInfo(response.data);
+        if (response.data.has_update) {
+          message.info(`发现新版本 v${response.data.latest_version}`);
+        } else if (response.data.error) {
+          message.warning(response.data.error);
+        } else {
+          message.success('当前已是最新版本');
+        }
+      }
+    } catch (error) {
+      message.error('检查更新失败: ' + (error.response?.data?.error || error.message));
+    } finally {
+      setCheckingUpdate(false);
+    }
+  };
+
+  const handleApplyUpdate = () => {
+    Modal.confirm({
+      title: '确认更新',
+      icon: <CloudDownloadOutlined />,
+      content: '更新将执行 git pull 并重启服务，期间服务会短暂中断。确定继续吗？',
+      okText: '立即更新',
+      cancelText: '取消',
+      onOk: async () => {
+        try {
+          setApplyingUpdate(true);
+          const response = await updateApi.apply();
+          if (response.success) {
+            message.success(response.message || '更新完成，服务即将重启...');
+            // 等待服务重启后刷新页面
+            setTimeout(() => {
+              window.location.reload();
+            }, 4000);
+          }
+        } catch (error) {
+          message.error('更新失败: ' + (error.response?.data?.error || error.message));
+        } finally {
+          setApplyingUpdate(false);
+        }
+      },
+    });
+  };
+
   return (
     <div>
       <Title level={2}>设置</Title>
@@ -314,6 +383,70 @@ const Settings = () => {
           )}
           locale={{ emptyText: '暂无呼号，请添加' }}
         />
+      </Card>
+
+      {/* 自动更新 */}
+      <Card title="自动更新" style={{ marginBottom: 24 }}>
+        <Space direction="vertical" size="middle" style={{ width: '100%' }}>
+          <div>
+            <Text strong>更新库地址</Text>
+            <br />
+            <Text type="secondary">GitHub 仓库地址，用于查询最新 release 版本</Text>
+          </div>
+          <Input.Search
+            value={updateRepo}
+            onChange={(e) => setUpdateRepo(e.target.value)}
+            onSearch={handleSaveUpdateRepo}
+            enterButton="保存"
+            placeholder="https://github.com/BH2VSQ/QSLCard-Manager"
+          />
+          <Divider style={{ margin: '8px 0' }} />
+          <Space wrap>
+            <Text>
+              当前版本：<Text strong>{updateInfo?.current_version || '未知'}</Text>
+            </Text>
+            {updateInfo?.latest_version && (
+              <Text>
+                最新版本：<Text strong>{updateInfo.latest_version}</Text>
+              </Text>
+            )}
+            {updateInfo?.has_update && <Tag color="green">有新版本可用</Tag>}
+          </Space>
+          {updateInfo?.release_notes && (
+            <div>
+              <Text strong>更新内容：</Text>
+              <pre
+                style={{
+                  whiteSpace: 'pre-wrap',
+                  wordBreak: 'break-word',
+                  marginTop: 4,
+                  marginBottom: 0,
+                  maxHeight: 160,
+                  overflow: 'auto',
+                  background: 'var(--bg-secondary)',
+                  padding: 8,
+                  borderRadius: 4,
+                }}
+              >
+                {updateInfo.release_notes}
+              </pre>
+            </div>
+          )}
+          <Space>
+            <Button icon={<ReloadOutlined />} loading={checkingUpdate} onClick={handleCheckUpdate}>
+              检查更新
+            </Button>
+            <Button
+              type="primary"
+              icon={<CloudDownloadOutlined />}
+              loading={applyingUpdate}
+              disabled={!updateInfo?.has_update}
+              onClick={handleApplyUpdate}
+            >
+              立即更新
+            </Button>
+          </Space>
+        </Space>
       </Card>
 
       {/* 危险区域 */}

@@ -12,6 +12,7 @@ import {
   Modal,
   Tabs,
   Tooltip,
+  Radio,
 } from 'antd';
 import {
   SearchOutlined,
@@ -34,6 +35,19 @@ const CardManagement = () => {
     pageSize: 20,
     total: 0,
   });
+
+  // 补打标签时的 PSE/TNX 选择
+  const [qslMessageModal, setQslMessageModal] = useState({
+    open: false,
+    resolve: null,
+  });
+  const [tempQslMessage, setTempQslMessage] = useState('PSE');
+
+  const promptQslMessage = () =>
+    new Promise((resolve) => {
+      setTempQslMessage('PSE');
+      setQslMessageModal({ open: true, resolve });
+    });
 
   useEffect(() => {
     fetchAllCards();
@@ -86,13 +100,15 @@ const CardManagement = () => {
     }));
   }, [activeTab, allCards]);
 
-  const handleUnbind = async (qslId, logId) => {
+  const handleUnbind = async (record) => {
     try {
-      const response = await qslApi.recycle(qslId, logId);
-      if (response.success) {
-        message.success('卡片已解绑并回收');
-        fetchAllCards(); // 重新获取所有数据
+      const logIds = record.log_ids || [];
+      // 遍历该卡片关联的所有日志，逐一解绑；当最后一条关联移除后后端会自动回收卡号
+      for (const logId of logIds) {
+        await qslApi.recycle(record.qsl_id, logId);
       }
+      message.success('卡片已解绑并回收');
+      fetchAllCards(); // 重新获取所有数据
     } catch (error) {
       message.error('解绑失败');
       console.error('Unbind error:', error);
@@ -101,12 +117,21 @@ const CardManagement = () => {
 
   const handleReprint = async (record) => {
     try {
+      // 只有发卡(TC)标签才需要选择 PSE/TNX
+      let qslMessage = 'PSE';
+      if (record.direction === 'TC') {
+        const chosen = await promptQslMessage();
+        if (!chosen) return; // 用户取消
+        qslMessage = chosen;
+      }
+
       // 添加到打印队列
       const response = await printApi.addToQueue({
         type: 'qsl_label',
         qsl_id: record.qsl_id,
         layout: record.direction === 'TC' ? 1 : 2,
         log_ids: record.log_ids,
+        qsl_message: qslMessage,
       });
 
       if (response.success) {
@@ -166,14 +191,21 @@ const CardManagement = () => {
       dataIndex: 'status',
       key: 'status',
       width: 120,
-      render: (status) => {
-        const statusMap = {
-          pending: { text: '待出库', color: 'orange' },
-          in_stock: { text: '已收到', color: 'blue' },
-          out_stock: { text: '已发出', color: 'green' },
-        };
-        const config = statusMap[status] || { text: status, color: 'default' };
-        return <Tag color={config.color}>{config.text}</Tag>;
+      render: (status, record) => {
+        const isTC = record.direction === 'TC';
+        let text = status;
+        let color = 'default';
+        if (status === 'pending') {
+          text = isTC ? '待出库' : '待入库';
+          color = 'orange';
+        } else if (status === 'out_stock') {
+          text = '已发出';
+          color = 'green';
+        } else if (status === 'in_stock') {
+          text = '已收到';
+          color = 'blue';
+        }
+        return <Tag color={color}>{text}</Tag>;
       },
     },
     {
@@ -220,7 +252,7 @@ const CardManagement = () => {
           <Popconfirm
             title="确定要解绑此卡片吗？"
             description="解绑后卡片将回到未分配状态，关联的日志不会被删除"
-            onConfirm={() => handleUnbind(record.qsl_id)}
+            onConfirm={() => handleUnbind(record)}
             okText="确定"
             cancelText="取消"
           >
@@ -321,6 +353,27 @@ const CardManagement = () => {
           scroll={{ x: 1200 }}
         />
       </Card>
+
+      {/* 补打标签文字选择（PSE/TNX） */}
+      <Modal
+        title="标签文字"
+        open={qslMessageModal.open}
+        onCancel={() => {
+          qslMessageModal.resolve && qslMessageModal.resolve(null);
+          setQslMessageModal({ open: false, resolve: null });
+        }}
+        onOk={() => {
+          qslMessageModal.resolve && qslMessageModal.resolve(tempQslMessage);
+          setQslMessageModal({ open: false, resolve: null });
+        }}
+        okText="确定"
+        cancelText="取消"
+      >
+        <Radio.Group value={tempQslMessage} onChange={(e) => setTempQslMessage(e.target.value)}>
+          <Radio value="PSE">PSE QSL</Radio>
+          <Radio value="TNX">QSL TNX</Radio>
+        </Radio.Group>
+      </Modal>
     </div>
   );
 };

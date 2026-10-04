@@ -3,7 +3,6 @@ import {
   Card,
   Input,
   Button,
-  Space,
   message,
   Typography,
   Descriptions,
@@ -13,7 +12,7 @@ import {
 } from 'antd';
 import { SearchOutlined, ReloadOutlined } from '@ant-design/icons';
 import { qslApi } from '../api';
-import { STATUS_TEXT, DIRECTION_TEXT } from '../utils/constants';
+import { STATUS_TEXT, DIRECTION_TEXT, getStatusText } from '../utils/constants';
 import { formatQslId, formatDate, formatTime, formatFreq } from '../utils/formatters';
 
 const { Title, Text } = Typography;
@@ -123,7 +122,7 @@ const Scanner = () => {
     <div>
       <Card title={<Title level={3} style={{ margin: 0 }}>手动查询</Title>}>
         {/* 搜索框 */}
-        <Space style={{ marginBottom: 24 }}>
+        <div style={{ marginBottom: 24, display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'center' }}>
           <Text strong>QSL ID:</Text>
           <Input
             size="large"
@@ -131,7 +130,7 @@ const Scanner = () => {
             value={qslId}
             onChange={(e) => setQslId(e.target.value)}
             onKeyPress={handleKeyPress}
-            style={{ width: 400 }}
+            style={{ flex: 1, minWidth: 220 }}
             autoFocus
           />
           <Button
@@ -146,7 +145,7 @@ const Scanner = () => {
           <Button size="large" icon={<ReloadOutlined />} onClick={handleReset}>
             重置
           </Button>
-        </Space>
+        </div>
 
         {/* 卡片信息 */}
         {cardInfo && (
@@ -176,7 +175,7 @@ const Scanner = () => {
                       : 'default'
                   }
                 >
-                  {STATUS_TEXT[cardInfo.status]}
+                  {getStatusText(cardInfo.status, cardInfo.direction)}
                 </Tag>
               </Descriptions.Item>
               <Descriptions.Item label="创建时间" span={2}>

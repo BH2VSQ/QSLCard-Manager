@@ -85,6 +85,9 @@ const AppLayout = () => {
         onCollapse={setCollapsed}
         theme={theme === 'dark' ? 'dark' : 'light'}
         width={220}
+        breakpoint="lg"
+        collapsedWidth={0}
+        className="app-sider"
       >
         <div className="logo">
           <Title level={4} style={{ color: theme === 'dark' ? '#fff' : '#000', margin: '16px' }}>
@@ -101,6 +104,7 @@ const AppLayout = () => {
       </Sider>
       <AntLayout>
         <Header
+          className="app-header"
           style={{
             padding: '0 24px',
             background: theme === 'dark' ? '#001529' : '#fff',
@@ -109,7 +113,11 @@ const AppLayout = () => {
             alignItems: 'center',
           }}
         >
-          <Title level={3} style={{ margin: 0, color: theme === 'dark' ? '#fff' : '#000' }}>
+          <Title
+            level={3}
+            className="app-header-title"
+            style={{ margin: 0, color: theme === 'dark' ? '#fff' : '#000' }}
+          >
             QSL Card Manager
           </Title>
           <Space>
@@ -123,7 +131,7 @@ const AppLayout = () => {
             </Button>
           </Space>
         </Header>
-        <Content style={{ margin: '24px 16px', padding: 24, minHeight: 280 }}>
+        <Content className="app-content" style={{ margin: '24px 16px', padding: 24, minHeight: 280 }}>
           <Outlet />
         </Content>
       </AntLayout>

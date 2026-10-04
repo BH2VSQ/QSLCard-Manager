@@ -43,6 +43,7 @@ import addressRouter from './server/routes/address.js';
 import printRouter from './server/routes/print.js';
 import configRouter from './server/routes/config.js';
 import statsRouter from './server/routes/stats.js';
+import updateRouter from './server/routes/update.js';
 
 // 注册路由
 app.use('/api/logs', logsRouter);
@@ -51,6 +52,7 @@ app.use('/api/address', addressRouter);
 app.use('/api/print', printRouter);
 app.use('/api/config', configRouter);
 app.use('/api/stats', statsRouter);
+app.use('/api/update', updateRouter);
 
 // 健康检查
 app.get('/api/health', (req, res) => {
