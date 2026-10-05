@@ -81,6 +81,8 @@ const CardManagement = () => {
     switch (tab) {
       case 'pending_out':
         return cards.filter(card => card.status === 'pending' && card.direction === 'TC');
+      case 'pending_in':
+        return cards.filter(card => card.status === 'pending' && card.direction === 'RC');
       case 'out_stock':
         return cards.filter(card => card.status === 'out_stock');
       case 'in_stock':
@@ -155,8 +157,9 @@ const CardManagement = () => {
               record.status === 'pending' ? 'orange' :
               record.status === 'out_stock' ? 'green' : 'blue'
             }>
-              {record.status === 'pending' ? '待出库' :
-               record.status === 'out_stock' ? '已发出' : '已收到'}
+              {record.status === 'pending'
+                ? (record.direction === 'TC' ? '待出库' : '待入库')
+                : record.status === 'out_stock' ? '已发出' : '已收到'}
             </Tag>
           </p>
           <p><strong>创建时间：</strong>{record.created_at}</p>
@@ -294,6 +297,10 @@ const CardManagement = () => {
     {
       key: 'pending_out',
       label: `待出库 (${allCards.filter(c => c.status === 'pending' && c.direction === 'TC').length})`,
+    },
+    {
+      key: 'pending_in',
+      label: `待入库 (${allCards.filter(c => c.status === 'pending' && c.direction === 'RC').length})`,
     },
     {
       key: 'out_stock',

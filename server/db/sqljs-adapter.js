@@ -101,6 +101,7 @@ function createMainSchema() {
       tx_pwr REAL,
       comment TEXT,
       notes TEXT,
+      adif_blob TEXT,
       qsl_sent TEXT DEFAULT 'N',
       qsl_rcvd TEXT DEFAULT 'N',
       qsl_sent_date TEXT,
@@ -196,6 +197,20 @@ function ensureMainSchema() {
         `INSERT OR REPLACE INTO qsl_serial_counter (year, direction, last_serial) VALUES ('${currentYear}', '${direction}', ${maxSerial})`
       );
     }
+  }
+
+  // 检查并添加缺失的字段（用于已有数据库升级）
+  try {
+    const logsInfo = mainDb.exec('PRAGMA table_info(logs)');
+    if (logsInfo[0]) {
+      const columns = logsInfo[0].values.map(row => row[1]); // 字段名在索引1
+      if (!columns.includes('adif_blob')) {
+        console.log('📝 添加 logs.adif_blob 字段...');
+        mainDb.run('ALTER TABLE logs ADD COLUMN adif_blob TEXT');
+      }
+    }
+  } catch (error) {
+    console.warn('检查/添加 logs 字段时出错:', error.message);
   }
 }
 
