@@ -15,7 +15,7 @@ import {
 } from 'antd';
 import { SaveOutlined, CloseOutlined } from '@ant-design/icons';
 import { useNavigate, useParams } from 'react-router-dom';
-import { logsApi } from '../api';
+import { logsApi, configApi } from '../api';
 import { MODES_LIST, BAND_LIST } from '../utils/constants';
 import dayjs from 'dayjs';
 import utc from 'dayjs/plugin/utc';
@@ -33,10 +33,42 @@ const LogEditor = () => {
   const [qsoType, setQsoType] = useState('Basic (HF/VHF/UHF)');
   const [rcCardId, setRcCardId] = useState('N/A');
   const [tcCardId, setTcCardId] = useState('N/A');
+  const [callsigns, setCallsigns] = useState([]);
 
   const isEditMode = !!id;
 
+  // 加载已保存的呼号，并在新建模式下自动填入我方呼号
+  const fetchCallsigns = async () => {
+    try {
+      const [configRes, callsignsRes] = await Promise.all([
+        configApi.getConfig(),
+        configApi.getCallsigns(),
+      ]);
+
+      const list = callsignsRes.success ? (callsignsRes.data || []) : [];
+      setCallsigns(list);
+
+      if (isEditMode) return;
+
+      const primary = configRes.success ? configRes.data.primary_callsign : '';
+      // 自动填入我方呼号：优先主要呼号，其次唯一呼号，多个则留空让用户选择
+      const defaultMy =
+        primary && list.includes(primary)
+          ? primary
+          : list.length === 1
+          ? list[0]
+          : undefined;
+
+      if (defaultMy) {
+        form.setFieldsValue({ my_callsign: defaultMy });
+      }
+    } catch (error) {
+      console.error('Fetch callsigns error:', error);
+    }
+  };
+
   useEffect(() => {
+    fetchCallsigns();
     if (isEditMode) {
       fetchLog();
     } else {
@@ -72,6 +104,7 @@ const LogEditor = () => {
 
         // 设置表单值
         form.setFieldsValue({
+          my_callsign: log.my_callsign,
           station_callsign: log.station_callsign,
           qso_date: log.qso_date ? dayjs(log.qso_date, 'YYYYMMDD') : null,
           time_on: log.time_on,
@@ -222,6 +255,7 @@ const LogEditor = () => {
       setLoading(true);
 
       const data = {
+        my_callsign: values.my_callsign || null,
         station_callsign: values.station_callsign.toUpperCase(),
         qso_date: values.qso_date.format('YYYYMMDD'),
         time_on: values.time_on,
@@ -335,7 +369,28 @@ const LogEditor = () => {
 
           {/* 基本信息 */}
           <Row gutter={16}>
-            <Col span={12}>
+            <Col span={6}>
+              <Form.Item
+                label="我方呼号:"
+                name="my_callsign"
+                tooltip="从系统设置中保存的呼号自动填入，可手动选择"
+              >
+                <Select
+                  placeholder="选择我方呼号"
+                  showSearch
+                  allowClear
+                  optionFilterProp="children"
+                  style={{ textTransform: 'uppercase' }}
+                >
+                  {callsigns.map((callsign) => (
+                    <Select.Option key={callsign} value={callsign}>
+                      {callsign}
+                    </Select.Option>
+                  ))}
+                </Select>
+              </Form.Item>
+            </Col>
+            <Col span={6}>
               <Form.Item
                 label="对方呼号:"
                 name="station_callsign"

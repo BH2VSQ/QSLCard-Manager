@@ -376,7 +376,7 @@ router.put('/:id', (req, res) => {
     const adifBlob = JSON.stringify(logData);
     const stmt = db.prepare(`
       UPDATE logs SET
-        station_callsign = ?, qso_date = ?, time_on = ?,
+        my_callsign = ?, station_callsign = ?, qso_date = ?, time_on = ?,
         band = ?, band_rx = ?, freq = ?, freq_rx = ?,
         mode = ?, submode = ?, rst_sent = ?, rst_rcvd = ?,
         comment = ?, adif_blob = ?, sat_name = ?, prop_mode = ?,
@@ -385,6 +385,7 @@ router.put('/:id', (req, res) => {
     `);
 
     const result = stmt.run(
+      logData.my_callsign,
       logData.station_callsign,
       logData.qso_date,
       logData.time_on,
