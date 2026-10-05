@@ -274,15 +274,22 @@ function createAddressSchema() {
 }
 
 /**
+ * 将 undefined 归一化为 null（sql.js 无法绑定 undefined 类型的值）
+ */
+function normalizeParams(params) {
+  return params.map(p => (p === undefined ? null : p));
+}
+
+/**
  * 执行查询并返回所有结果
  */
 export function all(sql, params = [], dbType = 'main') {
   const db = dbType === 'address' ? addressDb : mainDb;
-  
+
   try {
     const stmt = db.prepare(sql);
     if (params.length > 0) {
-      stmt.bind(params);
+      stmt.bind(normalizeParams(params));
     }
     
     const results = [];
@@ -315,8 +322,8 @@ export function run(sql, params = [], dbType = 'main') {
   const db = dbType === 'address' ? addressDb : mainDb;
   
   try {
-    db.run(sql, params);
-    
+    db.run(sql, normalizeParams(params));
+
     // 获取影响的行数和最后插入的 ID
     const changes = db.getRowsModified();
     let lastInsertRowid = 0;
