@@ -638,15 +638,15 @@ const LogEditor = () => {
           {isEditMode && (
             <Row gutter={16}>
               <Col span={12}>
-                <Form.Item label="收卡 (RC) 编号:">
-                  <Input value={rcCardId} readOnly />
-                </Form.Item>
-              </Col>
-              <Col span={12}>
                 <Form.Item label="发卡 (TC) 编号:">
                   <Input value={tcCardId} readOnly />
                 </Form.Item>
               </Col>
+              <Col span={12}>
+                <Form.Item label="收卡 (RC) 编号:">
+                  <Input value={rcCardId} readOnly />
+                </Form.Item>
+              </Col>              
             </Row>
           )}
         </Form>
